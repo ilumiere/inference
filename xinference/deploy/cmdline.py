@@ -12,23 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
-import logging
-import os
-import sys
-import warnings
-from typing import List, Optional, Sequence, Tuple, Union
+# 导入必要的模块
+import asyncio  # 用于异步编程
+import logging  # 用于日志记录
+import os  # 用于操作系统相关功能
+import sys  # 用于系统相关功能
+import warnings  # 用于发出警告
+from typing import List, Optional, Sequence, Tuple, Union  # 用于类型注解
 
-import click
-from xoscar.utils import get_next_port
+import click  # 用于创建命令行界面
+from xoscar.utils import get_next_port  # 用于获取下一个可用端口
 
-from .. import __version__
-from ..client import RESTfulClient
-from ..client.restful.restful_client import (
+from .. import __version__  # 导入版本信息
+from ..client import RESTfulClient  # 导入RESTful客户端
+from ..client.restful.restful_client import (  # 导入RESTful客户端相关类
     RESTfulChatModelHandle,
     RESTfulGenerateModelHandle,
 )
-from ..constants import (
+from ..constants import (  # 导入常量
     XINFERENCE_AUTH_DIR,
     XINFERENCE_DEFAULT_DISTRIBUTED_HOST,
     XINFERENCE_DEFAULT_ENDPOINT_PORT,
@@ -37,9 +38,9 @@ from ..constants import (
     XINFERENCE_LOG_BACKUP_COUNT,
     XINFERENCE_LOG_MAX_BYTES,
 )
-from ..isolation import Isolation
-from ..types import ChatCompletionMessage
-from .utils import (
+from ..isolation import Isolation  # 导入隔离相关功能
+from ..types import ChatCompletionMessage  # 导入聊天完成消息类型
+from .utils import (  # 导入工具函数
     get_config_dict,
     get_log_file,
     get_timestamp_ms,
@@ -47,25 +48,26 @@ from .utils import (
 )
 
 try:
-    # provide elaborate line editing and history features.
-    # https://docs.python.org/3/library/functions.html#input
+    # 尝试导入readline模块，提供更好的行编辑和历史功能
     import readline  # noqa: F401
 except ImportError:
-    pass
+    pass  # 如果导入失败，则忽略
 
-
+# 定义获取端点的函数
 def get_endpoint(endpoint: Optional[str]) -> str:
-    # user didn't specify the endpoint.
+    # 如果未指定端点
     if endpoint is None:
+        # 检查环境变量中是否有端点设置
         if XINFERENCE_ENV_ENDPOINT in os.environ:
             return os.environ[XINFERENCE_ENV_ENDPOINT]
         else:
+            # 使用默认端点
             default_endpoint = f"http://{XINFERENCE_DEFAULT_LOCAL_HOST}:{XINFERENCE_DEFAULT_ENDPOINT_PORT}"
             return default_endpoint
     else:
         return endpoint
 
-
+# 定义获取端点哈希值的函数
 def get_hash_endpoint(endpoint: str) -> str:
     import hashlib
 
@@ -73,7 +75,7 @@ def get_hash_endpoint(endpoint: str) -> str:
     m.update(bytes(endpoint, "utf-8"))
     return m.hexdigest()
 
-
+# 定义获取存储令牌的函数
 def get_stored_token(
     endpoint: str, client: Optional[RESTfulClient] = None
 ) -> Optional[str]:
@@ -89,7 +91,7 @@ def get_stored_token(
         access_token = str(f.read())
     return access_token
 
-
+# 定义启动本地集群的函数
 def start_local_cluster(
     log_level: str,
     host: str,
@@ -117,7 +119,7 @@ def start_local_cluster(
         auth_config_file=auth_config_file,
     )
 
-
+# 使用click创建命令行界面
 @click.group(
     invoke_without_command=True,
     name="xinference",
@@ -158,7 +160,7 @@ def cli(
     port: int,
 ):
     if ctx.invoked_subcommand is None:
-        # Save the current state of the warning filter.
+        # 保存当前警告过滤器状态
         with warnings.catch_warnings():
             warnings.simplefilter("always", DeprecationWarning)
             warnings.warn(
@@ -170,7 +172,7 @@ def cli(
 
         start_local_cluster(log_level=log_level, host=host, port=port)
 
-
+# 定义启动本地集群的命令
 @click.command(help="Starts an Xinference local cluster.")
 @click.option(
     "--log-level",
@@ -230,7 +232,7 @@ def local(
         auth_config_file=auth_config,
     )
 
-
+# 定义启动监督器的命令
 @click.command(
     help="Starts an Xinference supervisor to control and monitor the worker actors."
 )
@@ -290,7 +292,7 @@ def supervisor(
         auth_config_file=auth_config,
     )
 
-
+# 定义启动工作节点的命令
 @click.command(
     help="Starts an Xinference worker to execute tasks assigned by the supervisor in a distributed setup."
 )
@@ -358,7 +360,7 @@ def worker(
         logging_conf=dict_config,
     )
 
-
+# 定义注册模型的命令
 @cli.command("register", help="Register a new model with Xinference for deployment.")
 @click.option("--endpoint", "-e", type=str, help="Xinference endpoint.")
 @click.option(
@@ -407,7 +409,7 @@ def register_model(
         persist=persist,
     )
 
-
+# 定义注销模型的命令
 @cli.command(
     "unregister",
     help="Unregister a model from Xinference, removing it from deployment.",
@@ -444,7 +446,7 @@ def unregister_model(
         model_name=model_name,
     )
 
-
+# 定义列出已注册模型的命令
 @cli.command("registrations", help="List all registered models in Xinference.")
 @click.option(
     "--endpoint",

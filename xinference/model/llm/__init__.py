@@ -132,6 +132,7 @@ def _install():
     from .transformers.yi_vl import YiVLChatModel
     from .vllm.core import VLLMChatModel, VLLMModel, VLLMVisionModel
 
+    # 尝试导入OmniLMMModel，如果失败则发出警告
     try:
         from .transformers.omnilmm import OmniLMMModel
     except ImportError as e:
@@ -267,6 +268,7 @@ def _install():
         for family in families:
             generate_engine_config_by_model_family(family)
 
+    # 处理用户定义的LLM模型
     from ...constants import XINFERENCE_MODEL_DIR
 
     user_defined_llm_dir = os.path.join(XINFERENCE_MODEL_DIR, "llm")
@@ -278,6 +280,6 @@ def _install():
                 user_defined_llm_family = CustomLLMFamilyV1.parse_obj(json.load(fd))
                 register_llm(user_defined_llm_family, persist=False)
 
-    # register model description
+    # 为用户定义的LLM模型生成描述
     for ud_llm in get_user_defined_llm_families():
         LLM_MODEL_DESCRIPTIONS.update(generate_llm_description(ud_llm))

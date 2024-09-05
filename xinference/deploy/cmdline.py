@@ -159,10 +159,21 @@ def cli(
     host: str,
     port: int,
 ):
+    # 定义命令行界面的主函数
+    # ctx: Click的上下文对象
+    # log_level: 日志级别
+    # host: 主机地址
+    # port: 端口号
+    
     if ctx.invoked_subcommand is None:
-        # 保存当前警告过滤器状态
+        # 如果没有调用子命令，执行以下代码
+        
+        # 使用warnings.catch_warnings()上下文管理器来控制警告的行为
         with warnings.catch_warnings():
+            # 将所有DeprecationWarning设置为always显示
             warnings.simplefilter("always", DeprecationWarning)
+            
+            # 发出一个废弃警告
             warnings.warn(
                 "Starting a local 'xinference' cluster via the 'xinference' command line is "
                 "deprecated and will be removed in a future release. Please use the new "
@@ -170,6 +181,7 @@ def cli(
                 category=DeprecationWarning,
             )
 
+        # 调用start_local_cluster函数启动本地集群
         start_local_cluster(log_level=log_level, host=host, port=port)
 
 # 定义启动本地集群的命令
@@ -274,16 +286,20 @@ def supervisor(
     supervisor_port: Optional[int],
     auth_config: Optional[str],
 ):
+    # 从 ..deploy.supervisor 模块导入 main 函数
     from ..deploy.supervisor import main
 
+    # 获取配置字典，包括日志级别、日志文件路径、备份数量和最大字节数
     dict_config = get_config_dict(
         log_level,
         get_log_file(f"supervisor_{get_timestamp_ms()}"),
         XINFERENCE_LOG_BACKUP_COUNT,
         XINFERENCE_LOG_MAX_BYTES,
     )
+    # 使用配置字典设置日志配置
     logging.config.dictConfig(dict_config)  # type: ignore
 
+    # 调用 main 函数启动监督器，传入主机、端口、监督器端口、日志配置和认证配置文件
     main(
         host=host,
         port=port,

@@ -21,7 +21,12 @@ from .._compat import BaseModel
 
 logger = getLogger(__name__)
 
-
+# Enum 的特性：
+# 每个枚举成员都有两个主要属性：.name 和 .value。
+# .name 返回枚举成员的名称（字符串）。
+# .value 返回枚举成员的值。
+# 例如，LaunchStatus.TERMINATED.name 会返回字符串 "TERMINATED"。
+# 而 LaunchStatus.TERMINATED.value 会返回整数 4。
 class LaunchStatus(Enum):
     CREATING = 1
     UPDATING = 2
@@ -56,6 +61,7 @@ class StatusGuardActor(xo.StatelessActor):
 
     @staticmethod
     def _drop_terminated_info(instance_infos: List[InstanceInfo]) -> List[InstanceInfo]:
+        # 从实例信息列表中移除已终止的实例
         return [
             info
             for info in instance_infos
@@ -68,6 +74,22 @@ class StatusGuardActor(xo.StatelessActor):
     def get_instance_info(
         self, model_name: Optional[str] = None, model_uid: Optional[str] = None
     ) -> List[InstanceInfo]:
+        """
+        获取实例信息。
+
+        参数:
+            model_name: 可选，模型名称
+            model_uid: 可选，模型唯一标识符
+
+        返回:
+            List[InstanceInfo]: 包含实例信息的列表
+
+        说明:
+            - 如果提供了model_uid，则返回该特定模型的信息（如果存在）
+            - 如果提供了model_name，则返回所有匹配该名称的模型信息
+            - 如果两者都未提供，则返回所有模型的信息
+            - 返回结果中不包含已终止的实例
+        """
         if model_uid is not None:
             return (
                 self._drop_terminated_info([self._model_uid_to_info[model_uid]])

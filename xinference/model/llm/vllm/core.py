@@ -89,9 +89,12 @@ try:
 except ImportError:
     VLLM_INSTALLED = False
 
+# VLLM支持的视觉模型列表
 VLLM_SUPPORTED_VISION_MODEL_LIST: List[str] = [
     "internvl2",
 ]
+
+# VLLM支持的基础模型列表
 VLLM_SUPPORTED_MODELS = [
     "llama-2",
     "llama-3",
@@ -104,6 +107,8 @@ VLLM_SUPPORTED_MODELS = [
     "deepseek",
     "deepseek-coder",
 ]
+
+# VLLM支持的聊天模型列表
 VLLM_SUPPORTED_CHAT_MODELS = [
     "llama-2-chat",
     "llama-3-instruct",
@@ -130,6 +135,8 @@ VLLM_SUPPORTED_CHAT_MODELS = [
     "deepseek-chat",
     "deepseek-coder-instruct",
 ]
+
+# 根据VLLM版本添加支持的模型
 if VLLM_INSTALLED and vllm.__version__ >= "0.3.0":
     VLLM_SUPPORTED_CHAT_MODELS.append("qwen1.5-chat")
     VLLM_SUPPORTED_MODELS.append("codeqwen1.5")

@@ -258,6 +258,26 @@ class SupervisorActor(xo.StatelessActor):
 
     @typing.no_type_check
     async def get_cluster_device_info(self, detailed: bool = False) -> List:
+        """
+        获取集群设备信息的异步方法。
+
+        参数:
+            detailed (bool): 是否返回详细信息，默认为False。
+
+        返回:
+            List: 包含集群中所有节点（Supervisor和Worker）设备信息的列表。
+
+        说明:
+        1. 首先导入psutil库，用于获取系统信息。
+        2. 创建supervisor_device_info字典，包含基本信息如IP地址、GPU数量和总VRAM。
+        3. 如果detailed为True，添加更多详细信息，包括CPU和内存使用情况。
+        4. 将supervisor信息添加到结果列表res中。
+        5. 遍历所有worker节点，收集它们的设备信息：
+           - 基本信息包括节点类型、IP地址、GPU数量和总VRAM。
+           - 如果detailed为True，还包括CPU和内存的详细使用情况。
+        6. 将所有worker信息添加到res列表中。
+        7. 返回包含所有节点信息的列表。
+        """
         import psutil
 
         supervisor_device_info = {
@@ -303,9 +323,22 @@ class SupervisorActor(xo.StatelessActor):
                 )
             res.append(info)
         return res
-
     @staticmethod
     async def get_builtin_prompts() -> Dict[str, Any]:
+        """
+        获取内置提示的异步静态方法。
+
+        返回:
+            Dict[str, Any]: 包含内置提示样式的字典。
+
+        说明:
+        - 从 BUILTIN_LLM_PROMPT_STYLE 导入预定义的提示样式。
+        - 创建一个空字典 data 来存储结果。
+        - 遍历 BUILTIN_LLM_PROMPT_STYLE 中的每个键值对：
+          - 键 (k) 作为新字典的键。
+          - 值 (v) 通过调用 dict() 方法转换为字典，作为新字典的值。
+        - 返回包含所有转换后提示样式的字典。
+        """
         from ..model.llm.llm_family import BUILTIN_LLM_PROMPT_STYLE
 
         data = {}
@@ -331,6 +364,7 @@ class SupervisorActor(xo.StatelessActor):
         from ..device_utils import gpu_count
 
         if self.is_local_deployment():
+            print(f"local: deployment:===> !!!")
             return gpu_count()
         # distributed deployment, choose a worker and return its device_count.
         # Assume that each worker has the same count of cards.
@@ -338,6 +372,24 @@ class SupervisorActor(xo.StatelessActor):
         return await worker_ref.get_devices_count()
 
     async def _choose_worker(self) -> xo.ActorRefType["WorkerActor"]:
+        """
+        选择一个工作节点的异步方法。
+
+        返回:
+            xo.ActorRefType["WorkerActor"]: 选中的工作节点的引用。
+
+        异常:
+            RuntimeError: 当没有可用的工作节点时抛出。
+
+        说明:
+        - 该方法使用简单的负载均衡策略选择一个工作节点。
+        - 遍历所有工作节点，选择运行模型数量最少的节点。
+        - 如果找到合适的工作节点，返回该节点的引用。
+        - 如果没有可用的工作节点，抛出RuntimeError异常。
+
+        注意:
+        - TODO: 未来可以实现更好的分配策略。
+        """
         # TODO: better allocation strategy.
         min_running_model_count = None
         target_worker = None
@@ -747,27 +799,34 @@ class SupervisorActor(xo.StatelessActor):
 
     @log_async(logger=logger)
     async def query_engines_by_model_name(self, model_name: str):
+        # 这个方法用于根据模型名称查询引擎参数
         from copy import deepcopy
 
         from ..model.llm.llm_family import LLM_ENGINES
 
-        # search in worker first
+        # 首先在工作节点中搜索
         workers = list(self._worker_address_to_worker.values())
         for worker in workers:
+            # 对每个工作节点异步调用query_engines_by_model_name方法
             res = await worker.query_engines_by_model_name(model_name)
             if res is not None:
+                # 如果找到结果，直接返回
                 return res
 
+        # 如果在工作节点中没有找到，检查是否在LLM_ENGINES中
         if model_name not in LLM_ENGINES:
+            # 如果模型名称不在LLM_ENGINES中，抛出ValueError异常
             raise ValueError(f"Model {model_name} not found")
 
         # filter llm_class
         engine_params = deepcopy(LLM_ENGINES[model_name])
+        # 遍历所有引擎参数，移除"llm_class"键
         for engine in engine_params:
             params = engine_params[engine]
             for param in params:
                 del param["llm_class"]
 
+        # 返回处理后的引擎参数
         return engine_params
 
     @log_async(logger=logger)
@@ -839,7 +898,22 @@ class SupervisorActor(xo.StatelessActor):
         )
         return f"{model_name}-{gen_random_string(8)}"
 
+    # TODO 获取指定模型的所有版本信息 这里的mode_type没有使用到
     async def get_model_versions(self, model_type: str, model_name: str) -> List[Dict]:
+        """
+        获取指定模型的所有版本信息。
+
+        参数:
+            model_type: str - 模型类型
+            model_name: str - 模型名称
+
+        返回:
+            List[Dict] - 包含模型所有版本信息的字典列表
+
+        说明:
+            - 该方法通过缓存追踪器获取指定模型名称的所有版本信息
+            - model_type 参数目前未使用，保留以便未来扩展
+        """
         return await self._cache_tracker_ref.get_model_versions(model_name)
 
     async def get_model_version_count(self, model_name: str) -> int:
@@ -1034,9 +1108,21 @@ class SupervisorActor(xo.StatelessActor):
     async def get_instance_info(
         self, model_name: Optional[str], model_uid: Optional[str]
     ) -> List[Dict]:
+        """
+        获取模型实例信息。
+
+        参数:
+            model_name: 可选，模型名称
+            model_uid: 可选，模型唯一标识符
+
+        返回:
+            包含模型实例信息的字典列表，按模型UID排序
+        """
+        # 从状态守卫获取实例信息
         infos = await self._status_guard_ref.get_instance_info(
             model_name=model_name, model_uid=model_uid
         )
+        # 将实例信息转换为字典并按模型UID排序
         return [info.dict() for info in sorted(infos, key=lambda info: info.model_uid)]
 
     async def get_instance_count(self, model_name: str) -> int:
@@ -1136,32 +1222,50 @@ class SupervisorActor(xo.StatelessActor):
 
     @log_async(logger=logger)
     async def describe_model(self, model_uid: str) -> Dict[str, Any]:
+        # 从模型UID到副本信息的映射中获取副本信息
         replica_info = self._model_uid_to_replica_info.get(model_uid, None)
         if replica_info is None:
             raise ValueError(f"Model not found in the model list, uid: {model_uid}")
         # Use rep id 0 to instead of next(replica_info.scheduler) to avoid
         # consuming the generator.
         replica_model_uid = build_replica_model_uid(model_uid, replica_info.replica, 0)
+        
+        # 从副本模型UID到工作节点引用的映射中获取工作节点引用
         worker_ref = self._replica_model_uid_to_worker.get(replica_model_uid, None)
         if worker_ref is None:
+            # 如果找不到工作节点引用，抛出ValueError异常
             raise ValueError(
                 f"Model not found in the model list, uid: {replica_model_uid}"
             )
+        
+        # 调用工作节点的describe_model方法获取模型信息
         info = await worker_ref.describe_model(model_uid=replica_model_uid)
+        
+        # 在返回的信息中添加副本数量
         info["replica"] = replica_info.replica
+        
+        # 返回模型描述信息
         return info
 
     @log_async(logger=logger)
     async def list_models(self) -> Dict[str, Dict[str, Any]]:
+        # 初始化返回结果字典
         ret = {}
 
+        # 获取所有工作节点的引用列表
         workers = list(self._worker_address_to_worker.values())
+        # 遍历每个工作节点，获取其模型列表并更新结果字典
         for worker in workers:
             ret.update(await worker.list_models())
+        
+        # 解析复制模型UID，创建运行中模型信息字典
         running_model_info = {parse_replica_model_uid(k)[0]: v for k, v in ret.items()}
-        # add replica count
+        
+        # 为每个运行中的模型添加副本数量信息
         for k, v in running_model_info.items():
             v["replica"] = self._model_uid_to_replica_info[k].replica
+        
+        # 返回包含所有运行中模型信息的字典
         return running_model_info
 
     def is_local_deployment(self) -> bool:

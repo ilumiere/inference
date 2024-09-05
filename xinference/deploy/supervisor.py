@@ -77,18 +77,39 @@ def main(
     logging_conf: Optional[Dict] = None,
     auth_config_file: Optional[str] = None,
 ):
+    # 定义主函数,接收主机、端口、监督器端口、日志配置和认证配置文件作为参数
+    
     supervisor_address = f"{host}:{supervisor_port or get_next_port()}"
+    # 构造监督器地址,如果未指定端口则获取下一个可用端口
+    
     local_cluster = run_in_subprocess(supervisor_address, logging_conf)
+    # 在子进程中运行本地集群,传入监督器地址和日志配置
 
     if not health_check(
         address=supervisor_address,
         max_attempts=XINFERENCE_HEALTH_CHECK_FAILURE_THRESHOLD,
         sleep_interval=XINFERENCE_HEALTH_CHECK_INTERVAL,
     ):
+        # 执行健康检查,检查监督器是否可用
         raise RuntimeError("Supervisor is not available after multiple attempts")
+        # 如果多次尝试后监督器仍不可用,则抛出运行时错误
 
     try:
         from ..api import restful_api
+        # 再supervisor中启动restapi服务
+        # 导入restful_api模块
+        # 这里会阻塞，这里会阻塞住，只有当restful_api.run 返回之后才能往下继续执行
+        # 才会把集群停掉
+        # 可以考虑优化如下: 
+        # def signal_handler(signum, frame):
+        #     # 触发 restful_api 的关闭逻辑
+        #     # 这需要 restful_api 提供一个关闭方法
+        #     restful_api.shutdown()
+            
+
+        # signal.signal(signal.SIGINT, signal_handler)
+        # signal.signal(signal.SIGTERM, signal_handler)
+
 
         restful_api.run(
             supervisor_address=supervisor_address,
@@ -97,5 +118,7 @@ def main(
             logging_conf=logging_conf,
             auth_config_file=auth_config_file,
         )
+        # 运行RESTful API,传入监督器地址、主机、端口、日志配置和认证配置文件
     finally:
         local_cluster.kill()
+        # 无论try块是否成功执行,最后都会终止本地集群进程

@@ -197,7 +197,19 @@ class RESTfulAPI:
             raise HTTPException(status_code=429, detail=str(e))
 
     async def _get_supervisor_ref(self) -> xo.ActorRefType[SupervisorActor]:
+        """
+        获取监督者Actor的引用
+
+        返回:
+            xo.ActorRefType[SupervisorActor]: 监督者Actor的引用
+
+        说明:
+            - 如果监督者引用不存在，则创建一个新的引用
+            - 使用异步方法获取Actor引用
+        """
         if self._supervisor_ref is None:
+            # 如果监督者引用不存在，创建一个新的引用
+            # 通过supervisor的地址和uid获取引用
             self._supervisor_ref = await xo.actor_ref(
                 address=self._supervisor_address, uid=SupervisorActor.uid()
             )
@@ -296,6 +308,7 @@ class RESTfulAPI:
                 else None
             ),
         )
+        # 获取supervisor的地址
         self._router.add_api_route("/v1/address", self.get_address, methods=["GET"])
 
         # user interface
@@ -346,6 +359,7 @@ class RESTfulAPI:
                 else None
             ),
         )
+        # http://127.0.0.1:9997/v1/models/vllm/qwen2-instruct/versions
         self._router.add_api_route(
             "/v1/models/{model_type}/{model_name}/versions",
             self.get_model_versions,
@@ -759,21 +773,45 @@ class RESTfulAPI:
         For internal usage
         """
         try:
+            # 从监督者获取设备数量数据
             data = await (await self._get_supervisor_ref()).get_devices_count()
             return JSONResponse(content=data)
         except Exception as e:
+            # 记录错误日志
             logger.error(e, exc_info=True)
+            # 抛出HTTP 500错误
             raise HTTPException(status_code=500, detail=str(e))
-
     async def get_status(self) -> JSONResponse:
+        """
+        获取系统状态的异步方法
+
+        返回:
+            JSONResponse: 包含系统状态信息的JSON响应
+
+        异常:
+            HTTPException: 当发生错误时抛出，状态码为500
+        """
         try:
+            # 从监督者获取状态数据
             data = await (await self._get_supervisor_ref()).get_status()
+            # 将数据包装成JSON响应返回
             return JSONResponse(content=data)
         except Exception as e:
+            # 记录错误日志
             logger.error(e, exc_info=True)
+            # 抛出HTTP 500错误
             raise HTTPException(status_code=500, detail=str(e))
 
     async def list_models(self) -> JSONResponse:
+        """
+        获取所有运行中的模型信息。
+
+        返回:
+            JSONResponse: 包含所有运行中模型信息的JSON响应
+
+        异常:
+            HTTPException: 当发生错误时抛出，状态码为500
+        """
         try:
             models = await (await self._get_supervisor_ref()).list_models()
 
@@ -796,14 +834,31 @@ class RESTfulAPI:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def describe_model(self, model_uid: str) -> JSONResponse:
+        """
+        描述指定模型的详细信息。
+
+        参数:
+            model_uid (str): 模型的唯一标识符
+
+        返回:
+            JSONResponse: 包含模型详细信息的JSON响应
+
+        异常:
+            HTTPException: 
+                - 当模型不存在时，抛出400错误
+                - 当发生其他异常时，抛出500错误
+        """
         try:
+            # 通过监督者获取模型描述
             data = await (await self._get_supervisor_ref()).describe_model(model_uid)
+            # 返回模型描述的JSON响应
             return JSONResponse(content=data)
         except ValueError as ve:
+            # 记录错误日志并抛出400错误，通常是因为模型不存在
             logger.error(str(ve), exc_info=True)
             raise HTTPException(status_code=400, detail=str(ve))
-
         except Exception as e:
+            # 记录错误日志并抛出500错误，用于处理其他未预期的异常
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -967,7 +1022,21 @@ class RESTfulAPI:
         Separate build_interface with launch_model
         build_interface requires RESTful Client for API calls
         but calling API in async function does not return
+        构建Gradio界面并将其挂载到FastAPI应用程序上。
+
+        参数:
+            model_uid (str): 模型的唯一标识符
+            request (Request): FastAPI请求对象
+
+        返回:
+            JSONResponse: 包含模型UID的JSON响应
+
+        说明:
+            - 该方法分离了构建界面和启动模型的过程
+            - 构建界面需要RESTful客户端进行API调用
+            - 在异步函数中调用API不会返回结果
         """
+        # 解析请求体
         payload = await request.json()
         body = BuildGradioInterfaceRequest.parse_obj(payload)
         assert self._app is not None
@@ -988,8 +1057,11 @@ class RESTfulAPI:
         from ..core.chat_interface import GradioInterface
 
         try:
+            # 获取访问令牌和内部主机地址
             access_token = request.headers.get("Authorization")
             internal_host = "localhost" if self._host == "0.0.0.0" else self._host
+            
+            # 创建GradioInterface实例并构建界面
             interface = GradioInterface(
                 endpoint=f"http://{internal_host}:{self._port}",
                 model_uid=model_uid,
@@ -1004,15 +1076,20 @@ class RESTfulAPI:
                 model_lang=body.model_lang,
                 access_token=access_token,
             ).build()
+            
+            # 将Gradio应用挂载到FastAPI应用
             gr.mount_gradio_app(self._app, interface, f"/{model_uid}")
         except ValueError as ve:
+            # 处理参数错误
             logger.error(str(ve), exc_info=True)
             raise HTTPException(status_code=400, detail=str(ve))
 
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
+        # 返回包含模型UID的JSON响应
         return JSONResponse(content={"model_uid": model_uid})
 
     async def build_gradio_images_interface(
@@ -1763,6 +1840,7 @@ class RESTfulAPI:
                 self.handle_request_limit_error(e)
                 raise HTTPException(status_code=500, detail=str(e))
 
+    # TODO quwery_engines_by_model_name
     async def query_engines_by_model_name(self, model_name: str) -> JSONResponse:
         try:
             content = await (
@@ -1875,21 +1953,34 @@ class RESTfulAPI:
         except Exception as e:
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
-
     async def list_vllm_supported_model_families(self) -> JSONResponse:
+        """
+        列出VLLM支持的模型家族
+
+        返回:
+            JSONResponse: 包含支持的聊天和生成模型列表的JSON响应
+
+        异常:
+            HTTPException: 当发生错误时抛出，状态码为500
+        """
         try:
+            # 从vllm核心模块导入支持的模型列表
             from ..model.llm.vllm.core import (
                 VLLM_SUPPORTED_CHAT_MODELS,
                 VLLM_SUPPORTED_MODELS,
             )
 
+            # 构建包含聊天和生成模型的数据字典
             data = {
                 "chat": VLLM_SUPPORTED_CHAT_MODELS,
                 "generate": VLLM_SUPPORTED_MODELS,
             }
+            # 返回JSON响应
             return JSONResponse(content=data)
         except Exception as e:
+            # 记录错误日志
             logger.error(e, exc_info=True)
+            # 抛出HTTP 500错误
             raise HTTPException(status_code=500, detail=str(e))
 
     async def get_cluster_device_info(
@@ -1906,6 +1997,14 @@ class RESTfulAPI:
 
     async def get_cluster_version(self) -> JSONResponse:
         try:
+            # 获取集群版本实际上是通过version获取的realease版本的信息
+            # {
+            #     "version": "0.14.4+6.g66612b9.dirty",
+            #     "full-revisionid": "66612b9c9abd8598999490b1a2d34cfd3084d9ed",
+            #     "dirty": true,
+            #     "error": null,
+            #     "date": "2024-09-04T17:45:32+0800"
+            # }
             data = get_versions()
             return JSONResponse(content=data)
         except Exception as e:
@@ -2017,6 +2116,8 @@ def run(
             )
             api.serve(logging_conf=logging_conf)
         else:
+            # 果不是默认端口，说明用户明确指定了想要使用的端口。在这种情况下，
+            # 如果指定的端口不可用，代码选择抛出异常而不是自动选择其他端口。
             raise
 
 

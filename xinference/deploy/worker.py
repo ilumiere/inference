@@ -33,13 +33,18 @@ async def start_worker_components(
     metrics_exporter_host: Optional[str],
     metrics_exporter_port: Optional[int],
 ):
+    # 初始化GPU设备索引列表
     gpu_device_indices = []
+    # 获取CUDA_VISIBLE_DEVICES环境变量
     cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", None)
     if cuda_visible_devices is not None and cuda_visible_devices != "-1":
+        # 如果CUDA_VISIBLE_DEVICES存在且不为-1，解析并添加到GPU设备索引列表
         gpu_device_indices.extend([int(i) for i in cuda_visible_devices.split(",")])
     else:
+        # 否则，使用所有可用的GPU设备
         gpu_device_indices = list(range(gpu_count()))
 
+    # 创建WorkerActor
     await xo.create_actor(
         WorkerActor,
         address=address,
@@ -59,9 +64,12 @@ async def _start_worker(
     metrics_exporter_port: Optional[int] = None,
     logging_conf: Any = None,
 ):
+    # 导入创建工作者actor池的函数
     from .utils import create_worker_actor_pool
 
+    # 创建工作者actor池
     pool = await create_worker_actor_pool(address=address, logging_conf=logging_conf)
+    # 启动工作者组件
     await start_worker_components(
         address=address,
         supervisor_address=supervisor_address,
@@ -69,6 +77,7 @@ async def _start_worker(
         metrics_exporter_host=metrics_exporter_host,
         metrics_exporter_port=metrics_exporter_port,
     )
+    # 等待池完成
     await pool.join()
 
 
@@ -79,7 +88,9 @@ def main(
     metrics_exporter_port: Optional[int] = None,
     logging_conf: Optional[dict] = None,
 ):
+    # 获取事件循环
     loop = asyncio.get_event_loop()
+    # 创建启动工作者的任务
     task = loop.create_task(
         _start_worker(
             address,
@@ -91,9 +102,11 @@ def main(
     )
 
     try:
+        # 运行任务直到完成
         loop.run_until_complete(task)
     except KeyboardInterrupt:
+        # 如果接收到键盘中断，取消任务
         task.cancel()
         loop.run_until_complete(task)
-        # avoid displaying exception-unhandled warnings
+        # 获取任务异常以避免显示未处理的异常警告
         task.exception()

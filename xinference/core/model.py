@@ -68,6 +68,8 @@ except ImportError:
 XINFERENCE_BATCHING_ALLOWED_VISION_MODELS = ["qwen-vl-chat", "cogvlm2", "glm-4v"]
 
 
+
+
 def request_limit(fn):
     """
     Used by ModelActor.
@@ -125,12 +127,45 @@ def oom_check(fn):
         return _wrapper
 
 
+# ModelActor 类，这个类封装了与模型相关的各种操作。以下是该文件的主要功能：
+# 1. 模型生命周期管理：
+# 初始化模型（__init__方法）
+# 加载模型（load方法）
+# 销毁模型（__pre_destroy__方法）
+# 模型操作：
+# 文本生成（generate方法）
+# 聊天（chat方法）
+# 创建嵌入（create_embedding方法）
+# 重新排序（rerank方法）
+# 语音转文字（transcriptions方法）
+# 翻译（translations方法）
+# 文字转语音（speech方法）
+# 文本生成图像（text_to_image方法）
+# 文本生成视频（text_to_video方法）
+# 性能监控和指标记录：
+# 记录完成指标（_record_completion_metrics方法）
+# 记录一般指标（record_metrics方法）
+# 资源管理：
+# 请求限制（使用@request_limit装饰器）
+# 批处理支持（allow_batching方法）
+# 错误处理：
+# 内存溢出检查（oom_check装饰器）
+# 异步操作支持：
+# 大量使用async/await语法
+# 使用asyncio进行异步操作
+# 与其他组件的交互：
+# 与工作节点的交互（_get_worker_ref方法）
+# 与调度器的交互（在__post_create__方法中创建调度器）
+# 日志记录：
+# 使用@log_async装饰器记录异步操作的日志
 class ModelActor(xo.StatelessActor):
     @classmethod
     def gen_uid(cls, model: "LLM"):
+        # 生成模型的唯一标识符
         return f"{model.__class__}-model-actor"
 
     async def __pre_destroy__(self):
+        # 在销毁模型之前执行的清理操作
         from ..model.embedding.core import EmbeddingModel
         from ..model.llm.sglang.core import SGLANGModel
         from ..model.llm.transformers.core import PytorchModel as LLMPytorchModel
@@ -138,6 +173,7 @@ class ModelActor(xo.StatelessActor):
 
         if self.allow_batching():
             try:
+                # 销毁调度器
                 assert self._scheduler_ref is not None
                 await xo.destroy_actor(self._scheduler_ref)
                 del self._scheduler_ref
@@ -146,9 +182,11 @@ class ModelActor(xo.StatelessActor):
                     f"Destroy scheduler actor failed, address: {self.address}, error: {e}"
                 )
 
+        # 如果模型有stop方法，调用它
         if hasattr(self._model, "stop") and callable(self._model.stop):
             self._model.stop()
 
+        # 对于特定类型的模型，执行额外的清理操作
         if (
             isinstance(self._model, (LLMPytorchModel, LLMVLLMModel, SGLANGModel))
             and self._model.model_spec.model_format == "pytorch"
@@ -165,6 +203,7 @@ class ModelActor(xo.StatelessActor):
 
                 raise ImportError(f"{error_message}\n\n{''.join(installation_guide)}")
 
+            # 删除模型，执行垃圾回收和清空缓存
             del self._model
             gc.collect()
             empty_cache()
@@ -176,12 +215,14 @@ class ModelActor(xo.StatelessActor):
         model_description: Optional["ModelDescription"] = None,
         request_limits: Optional[int] = None,
     ):
+        # 初始化ModelActor
         super().__init__()
         from ..model.llm.lmdeploy.core import LMDeployModel
         from ..model.llm.sglang.core import SGLANGModel
         from ..model.llm.transformers.core import PytorchModel
         from ..model.llm.vllm.core import VLLMModel
 
+        # 设置基本属性
         self._worker_address = worker_address
         self._model = model
         self._model_description = (
@@ -189,6 +230,7 @@ class ModelActor(xo.StatelessActor):
         )
         self._request_limits = request_limits
 
+        # 初始化生成器和锁
         self._generators: Dict[str, Union[Iterator, AsyncGenerator]] = {}
         self._current_generator = lambda: None
         self._lock = (
@@ -198,6 +240,8 @@ class ModelActor(xo.StatelessActor):
             )
             else asyncio.locks.Lock()
         )
+        
+        # 初始化其他属性
         self._worker_ref = None
         self._serve_count = 0
         self._metrics_labels = {
@@ -212,9 +256,11 @@ class ModelActor(xo.StatelessActor):
         self._scheduler_ref = None
 
     async def __post_create__(self):
+        # 创建完成后的操作
         self._loop = asyncio.get_running_loop()
 
         if self.allow_batching():
+            # 如果允许批处理，创建调度器
             from .scheduler import SchedulerActor
 
             self._scheduler_ref = await xo.create_actor(
@@ -226,6 +272,7 @@ class ModelActor(xo.StatelessActor):
     async def _record_completion_metrics(
         self, duration, completion_tokens, prompt_tokens
     ):
+        # 记录完成指标
         coros = []
         if completion_tokens > 0:
             coros.append(
@@ -261,6 +308,7 @@ class ModelActor(xo.StatelessActor):
         await asyncio.gather(*coros)
 
     async def _get_worker_ref(self) -> xo.ActorRefType["WorkerActor"]:
+        # 获取工作节点的引用
         from .worker import WorkerActor
 
         if self._worker_ref is None:
@@ -270,11 +318,13 @@ class ModelActor(xo.StatelessActor):
         return self._worker_ref
 
     def is_vllm_backend(self) -> bool:
+        # 检查是否使用VLLM后端
         from ..model.llm.vllm.core import VLLMModel
 
         return isinstance(self._model, VLLMModel)
 
     def allow_batching(self) -> bool:
+        # 检查是否允许批处理
         from ..model.llm.transformers.core import PytorchModel
 
         model_ability = self._model_description.get("model_ability", [])
@@ -300,6 +350,7 @@ class ModelActor(xo.StatelessActor):
         return condition
 
     async def load(self):
+        # 加载模型
         self._model.load()
         if self.allow_batching():
             await self._scheduler_ref.set_model(self._model)
@@ -308,6 +359,7 @@ class ModelActor(xo.StatelessActor):
             )
 
     def model_uid(self):
+        # 获取模型的唯一标识符
         return (
             self._model.model_uid
             if hasattr(self._model, "model_uid")
@@ -319,6 +371,7 @@ class ModelActor(xo.StatelessActor):
         )
 
     def _to_generator(self, output_type: str, gen: types.GeneratorType):
+        # 将生成器转换为指定输出类型的生成器
         start_time = time.time()
         time_to_first_token = None
         final_usage = None
@@ -340,6 +393,7 @@ class ModelActor(xo.StatelessActor):
             )
             os._exit(1)
         finally:
+            # 记录指标
             if self._loop is not None and time_to_first_token is not None:
                 coro = self.record_metrics(
                     "time_to_first_token",
@@ -356,6 +410,7 @@ class ModelActor(xo.StatelessActor):
                 asyncio.run_coroutine_threadsafe(coro, loop=self._loop)
 
     async def _to_async_gen(self, output_type: str, gen: types.AsyncGeneratorType):
+        # 将异步生成器转换为指定输出类型的异步生成器
         start_time = time.time()
         time_to_first_token = None
         final_usage = None
@@ -378,6 +433,7 @@ class ModelActor(xo.StatelessActor):
             )
             os._exit(1)
         finally:
+            # 记录指标
             coros = []
             if time_to_first_token is not None:
                 coros.append(
@@ -398,13 +454,16 @@ class ModelActor(xo.StatelessActor):
             await asyncio.gather(*coros)
 
     async def _call_wrapper_json(self, fn: Callable, *args, **kwargs):
+        # JSON输出的调用包装器
         return await self._call_wrapper("json", fn, *args, **kwargs)
 
     async def _call_wrapper_binary(self, fn: Callable, *args, **kwargs):
+        # 二进制输出的调用包装器
         return await self._call_wrapper("binary", fn, *args, **kwargs)
 
     @oom_check
     async def _call_wrapper(self, output_type: str, fn: Callable, *args, **kwargs):
+        # 通用调用包装器
         if self._lock is None:
             if inspect.iscoroutinefunction(fn):
                 ret = await fn(*args, **kwargs)
@@ -438,6 +497,7 @@ class ModelActor(xo.StatelessActor):
     @request_limit
     @xo.generator
     async def generate(self, prompt: str, *args, **kwargs):
+        # 生成文本
         if self.allow_batching():
             return await self.handle_batching_request(
                 prompt, "generate", *args, **kwargs
@@ -458,6 +518,7 @@ class ModelActor(xo.StatelessActor):
     async def _queue_consumer(
         queue: Queue, timeout: Optional[float] = None
     ) -> AsyncIterator[Any]:
+        # 队列消费者
         from .scheduler import (
             XINFERENCE_STREAMING_ABORT_FLAG,
             XINFERENCE_STREAMING_DONE_FLAG,
@@ -482,6 +543,7 @@ class ModelActor(xo.StatelessActor):
 
     @staticmethod
     def _get_stream_from_args(ability: str, *args) -> bool:
+        # 从参数中获取流式处理标志
         if ability == "chat":
             assert args[2] is None or isinstance(args[2], dict)
             return False if args[2] is None else args[2].get("stream", False)
@@ -490,9 +552,11 @@ class ModelActor(xo.StatelessActor):
             return False if args[0] is None else args[0].get("stream", False)
 
     async def handle_batching_request(self, prompt: str, ability: str, *args, **kwargs):
+        # 处理批处理请求
         stream = self._get_stream_from_args(ability, *args)
         assert self._scheduler_ref is not None
         if stream:
+            # 处理流式请求
             assert self._scheduler_ref is not None
             queue: Queue[Any] = Queue()
             ret = self._queue_consumer(queue)
@@ -501,6 +565,7 @@ class ModelActor(xo.StatelessActor):
             self._current_generator = weakref.ref(gen)
             return gen
         else:
+            # 处理非流式请求
             from .scheduler import XINFERENCE_NON_STREAMING_ABORT_FLAG
 
             assert self._loop is not None
@@ -518,6 +583,7 @@ class ModelActor(xo.StatelessActor):
     @request_limit
     @xo.generator
     async def chat(self, prompt: str, *args, **kwargs):
+        # 聊天功能
         start_time = time.time()
         response = None
         try:
@@ -547,7 +613,7 @@ class ModelActor(xo.StatelessActor):
                 record = json.loads(response)
             if record and isinstance(record, dict):
                 usage = record["usage"]
-                # Some backends may not have a valid usage, we just skip them.
+                # 某些后端可能没有有效的使用情况，我们跳过它们
                 completion_tokens = usage["completion_tokens"]
                 prompt_tokens = usage["prompt_tokens"]
                 await self._record_completion_metrics(
@@ -557,6 +623,7 @@ class ModelActor(xo.StatelessActor):
                 )
 
     async def abort_request(self, request_id: str) -> str:
+        # 中止请求
         from .scheduler import AbortRequestMessage
 
         if self.allow_batching():
@@ -568,6 +635,7 @@ class ModelActor(xo.StatelessActor):
     @log_async(logger=logger)
     @request_limit
     async def create_embedding(self, input: Union[str, List[str]], *args, **kwargs):
+        # 创建嵌入
         if hasattr(self._model, "create_embedding"):
             return await self._call_wrapper_json(
                 self._model.create_embedding, input, *args, **kwargs
@@ -590,6 +658,7 @@ class ModelActor(xo.StatelessActor):
         *args,
         **kwargs,
     ):
+        # 重新排序
         if hasattr(self._model, "rerank"):
             return await self._call_wrapper_json(
                 self._model.rerank,
@@ -615,6 +684,7 @@ class ModelActor(xo.StatelessActor):
         temperature: float = 0,
         timestamp_granularities: Optional[List[str]] = None,
     ):
+        # 转录
         if hasattr(self._model, "transcriptions"):
             return await self._call_wrapper_json(
                 self._model.transcriptions,
@@ -640,6 +710,7 @@ class ModelActor(xo.StatelessActor):
         temperature: float = 0,
         timestamp_granularities: Optional[List[str]] = None,
     ):
+        # 翻译
         if hasattr(self._model, "translations"):
             return await self._call_wrapper_json(
                 self._model.translations,
@@ -669,6 +740,7 @@ class ModelActor(xo.StatelessActor):
         stream: bool = False,
         **kwargs,
     ):
+        # 语音生成
         if hasattr(self._model, "speech"):
             return await self._call_wrapper_binary(
                 self._model.speech,
@@ -694,6 +766,7 @@ class ModelActor(xo.StatelessActor):
         *args,
         **kwargs,
     ):
+        # 文本到图像生成
         if hasattr(self._model, "text_to_image"):
             return await self._call_wrapper_json(
                 self._model.text_to_image,
@@ -719,6 +792,7 @@ class ModelActor(xo.StatelessActor):
         *args,
         **kwargs,
     ):
+        # 图像到图像生成
         if hasattr(self._model, "image_to_image"):
             return await self._call_wrapper_json(
                 self._model.image_to_image,
@@ -747,6 +821,7 @@ class ModelActor(xo.StatelessActor):
         *args,
         **kwargs,
     ):
+        # 图像修复
         if hasattr(self._model, "inpainting"):
             return await self._call_wrapper_json(
                 self._model.inpainting,
@@ -770,6 +845,7 @@ class ModelActor(xo.StatelessActor):
         self,
         **kwargs,
     ):
+        # 灵活推理
         if hasattr(self._model, "infer"):
             return await self._call_wrapper_json(
                 self._model.infer,
@@ -788,6 +864,7 @@ class ModelActor(xo.StatelessActor):
         *args,
         **kwargs,
     ):
+        # 文本到视频生成
         if hasattr(self._model, "text_to_video"):
             return await self._call_wrapper_json(
                 self._model.text_to_video,
@@ -801,5 +878,6 @@ class ModelActor(xo.StatelessActor):
         )
 
     async def record_metrics(self, name, op, kwargs):
+        # 记录指标
         worker_ref = await self._get_worker_ref()
         await worker_ref.record_metrics(name, op, kwargs)

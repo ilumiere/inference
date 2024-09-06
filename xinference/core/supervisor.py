@@ -930,17 +930,21 @@ class SupervisorActor(xo.StatelessActor):
         n_gpu: Optional[Union[int, str]] = "auto",
         wait_ready: bool = True,
     ):
+        # 解析模型版本信息
         parse_results = parse_model_version(model_version, model_type)
 
+        # 如果是图像模型且解析结果有两个元素，设置controlnet参数
         if model_type == "image" and len(parse_results) == 2:
             kwargs = {"controlnet": parse_results[1]}
         else:
             kwargs = {}
 
+        # 调用launch_builtin_model方法启动模型
         return await self.launch_builtin_model(
             model_uid=model_uid,
             model_name=parse_results[0],
             model_engine=model_engine,
+            # 根据模型类型设置不同的参数
             model_size_in_billions=parse_results[1] if model_type == "LLM" else None,
             model_format=parse_results[2] if model_type == "LLM" else None,
             quantization=parse_results[3] if model_type == "LLM" else None,
@@ -1305,28 +1309,40 @@ class SupervisorActor(xo.StatelessActor):
 
     @log_async(logger=logger)
     async def abort_request(self, model_uid: str, request_id: str) -> Dict:
+        # 导入中止请求消息枚举
         from .scheduler import AbortRequestMessage
 
+        # 初始化结果字典，默认为无操作
         res = {"msg": AbortRequestMessage.NO_OP.name}
+        
+        # 获取模型的副本信息
         replica_info = self._model_uid_to_replica_info.get(model_uid, None)
         if not replica_info:
             return res
         replica_cnt = replica_info.replica
 
-        # Query all replicas
+        # 遍历所有副本
         for rep_mid in iter_replica_model_uid(model_uid, replica_cnt):
+            # 获取工作节点引用
             worker_ref = self._replica_model_uid_to_worker.get(rep_mid, None)
             if worker_ref is None:
                 continue
+            
+            # 获取模型引用
             model_ref = await worker_ref.get_model(model_uid=rep_mid)
+            
+            # 尝试中止请求
             result_info = await model_ref.abort_request(request_id)
             res["msg"] = result_info
+            
+            # 根据结果进行相应处理
             if result_info == AbortRequestMessage.DONE.name:
-                break
+                break  # 成功中止，退出循环
             elif result_info == AbortRequestMessage.NOT_FOUND.name:
                 logger.debug(f"Request id: {request_id} not found for model {rep_mid}")
             else:
                 logger.debug(f"No-op for model {rep_mid}")
+        
         return res
 
     @log_async(logger=logger)

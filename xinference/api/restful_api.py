@@ -216,7 +216,19 @@ class RESTfulAPI:
         return self._supervisor_ref
 
     async def _get_event_collector_ref(self) -> xo.ActorRefType[EventCollectorActor]:
+        """
+        获取事件收集器Actor的引用
+
+        返回:
+            xo.ActorRefType[EventCollectorActor]: 事件收集器Actor的引用
+
+        说明:
+            - 如果事件收集器引用不存在，则创建一个新的引用
+            - 使用异步方法获取Actor引用
+        """
         if self._event_collector_ref is None:
+            # 如果事件收集器引用不存在，创建一个新的引用
+            # 通过supervisor的地址和EventCollectorActor的uid获取引用
             self._event_collector_ref = await xo.actor_ref(
                 address=self._supervisor_address, uid=EventCollectorActor.uid()
             )
@@ -974,19 +986,22 @@ class RESTfulAPI:
             logger.error(str(e), exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
         return JSONResponse(content=infos)
-
     async def launch_model_by_version(
         self, request: Request, wait_ready: bool = Query(True)
     ) -> JSONResponse:
+        # 从请求中解析JSON数据
         payload = await request.json()
+        
+        # 获取模型相关参数
         model_uid = payload.get("model_uid")
         model_engine = payload.get("model_engine")
         model_type = payload.get("model_type")
         model_version = payload.get("model_version")
-        replica = payload.get("replica", 1)
-        n_gpu = payload.get("n_gpu", "auto")
+        replica = payload.get("replica", 1)  # 默认值为1
+        n_gpu = payload.get("n_gpu", "auto")  # 默认值为"auto"
 
         try:
+            # 调用supervisor启动指定版本的模型
             model_uid = await (
                 await self._get_supervisor_ref()
             ).launch_model_by_version(
@@ -999,8 +1014,11 @@ class RESTfulAPI:
                 wait_ready=wait_ready,
             )
         except Exception as e:
+            # 记录错误日志并抛出HTTP 500异常
             logger.error(str(e), exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
+        
+        # 返回包含模型UID的JSON响应
         return JSONResponse(content={"model_uid": model_uid})
 
     async def get_model_versions(
@@ -1934,6 +1952,18 @@ class RESTfulAPI:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def get_model_events(self, model_uid: str) -> JSONResponse:
+        """
+        获取模型事件
+
+        参数:
+            model_uid (str): 模型唯一标识符
+
+        返回:
+            JSONResponse: 包含模型事件的JSON响应
+
+        异常:
+            HTTPException: 当发生错误时抛出，状态码为500
+        """
         try:
             event_collector_ref = await self._get_event_collector_ref()
             events = await event_collector_ref.get_model_events(model_uid)

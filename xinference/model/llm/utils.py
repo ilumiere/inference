@@ -68,18 +68,21 @@ class ChatModelMixin:
         tools: Optional[List[Dict]] = None,
     ):
         """
-        Inspired by FastChat. Format chat history into a prompt according to the prompty style of
-        different models.
+        受FastChat启发。根据不同模型的提示风格将聊天历史格式化为提示。
         """
+        # 确保prompt_style.roles不为None
         assert prompt_style.roles is not None
+        # 如果prompt不是特殊工具提示，将其添加到聊天历史中
         if prompt != SPECIAL_TOOL_PROMPT:
             chat_history.append(
                 ChatCompletionMessage(role=prompt_style.roles[0], content=prompt)
             )
+        # 在聊天历史中添加一个空的助手消息
         chat_history.append(
             ChatCompletionMessage(role=prompt_style.roles[1], content="")
         )
 
+        # 定义一个函数来获取角色名称
         def get_role(role_name: str):
             if role_name == "user":
                 return prompt_style.roles[0]
@@ -88,6 +91,7 @@ class ChatModelMixin:
             else:
                 return role_name
 
+        # 根据不同的提示风格处理聊天历史
         if prompt_style.style_name == "ADD_COLON_SINGLE":
             ret = prompt_style.system_prompt + prompt_style.intra_message_sep
             for message in chat_history:
@@ -143,12 +147,13 @@ class ChatModelMixin:
             ret = ""
             for i, message in enumerate(chat_history):
                 content = message["content"]
-                if i % 2 == 0:  # user
+                if i % 2 == 0:  # 用户消息
                     ret += f"<s> [INST] {content} [/INST]"
-                else:  # assistant
+                else:  # 助手消息
                     ret += f"{content} </s>"
             return ret
         elif prompt_style.style_name == "CHATGLM3":
+            # 如果有系统提示，将其添加到提示列表中
             prompts = (
                 [f"<|system|>\n {prompt_style.system_prompt}"]
                 if prompt_style.system_prompt
@@ -183,6 +188,7 @@ class ChatModelMixin:
                     ret += f"<|{role}|>"
             return ret
         elif prompt_style.style_name == "QWEN":
+            # 如果提供了工具，生成工具描述和指令
             if tools:
                 tool_desc = """{name_for_model}: Call this tool to interact with the {name_for_human} API. What is the {name_for_human} API useful for? {description_for_model} Parameters: {parameters} Format the arguments as a JSON object."""
 
@@ -237,6 +243,7 @@ Begin!"""
             else:
                 tool_system = ""
 
+            # 生成提示
             ret = f"<|im_start|>system\n{prompt_style.system_prompt}<|im_end|>"
             for message in chat_history:
                 role = get_role(message["role"])
@@ -855,12 +862,15 @@ Begin!"""
 def get_file_location(
     llm_family: LLMFamilyV1, spec: LLMSpecV1, quantization: str
 ) -> Tuple[str, bool]:
+    # 获取缓存目录
     cache_dir = _get_cache_dir(
         llm_family, spec, quantization, create_if_not_exist=False
     )
+    # 获取缓存状态
     cache_status = get_cache_status(llm_family, spec, quantization)
     if isinstance(cache_status, list):
         is_cached = None
+        # 遍历量化列表，找到匹配的量化状态
         for q, cs in zip(spec.quantizations, cache_status):
             if q == quantization:
                 is_cached = cs
@@ -869,20 +879,26 @@ def get_file_location(
         is_cached = cache_status
     assert isinstance(is_cached, bool)
 
+    # 根据模型格式返回不同的文件位置信息
     if spec.model_format in ["pytorch", "gptq", "awq", "fp8", "mlx"]:
         return cache_dir, is_cached
     elif spec.model_format in ["ggufv2"]:
         assert isinstance(spec, LlamaCppLLMSpecV1)
+        # 构建模型文件名
         filename = spec.model_file_name_template.format(quantization=quantization)
+        # 获取完整的模型路径
         model_path = os.path.join(cache_dir, filename)
         return model_path, is_cached
     else:
-        raise ValueError(f"Not supported model format {spec.model_format}")
+        # 不支持的模型格式抛出异常
+        raise ValueError(f"不支持的模型格式 {spec.model_format}")
 
 
 def get_model_version(
     llm_family: LLMFamilyV1, llm_spec: LLMSpecV1, quantization: str
 ) -> str:
+    # 生成并返回模型版本字符串
+    # 格式: 模型名称--模型大小(单位:十亿参数)--模型格式--量化方式
     return f"{llm_family.model_name}--{llm_spec.model_size_in_billions}B--{llm_spec.model_format}--{quantization}"
 
 

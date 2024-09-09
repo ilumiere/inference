@@ -33,40 +33,64 @@ logger = logging.getLogger(__name__)
 
 
 async def _start_supervisor(address: str, logging_conf: Optional[Dict] = None):
+    # 配置日志
     logging.config.dictConfig(logging_conf)  # type: ignore
 
     pool = None
     try:
+        # 创建actor池
         pool = await xo.create_actor_pool(
             address=address, n_process=0, logging_conf={"dict": logging_conf}
         )
+        # 创建SupervisorActor
         await xo.create_actor(
             SupervisorActor, address=address, uid=SupervisorActor.uid()
         )
+        # 等待池中的所有任务完成
         await pool.join()
     except asyncio.exceptions.CancelledError:
+        # 如果收到取消信号
         if pool is not None:
+            # 停止actor池
             await pool.stop()
 
 
 def run(address: str, logging_conf: Optional[Dict] = None):
+    # 定义SIGTERM信号处理函数
     def sigterm_handler(signum, frame):
-        sys.exit(0)
+        print("Received SIGTERM signal. Exiting...")
+        sys.exit(0)  # 收到SIGTERM信号时退出程序
 
+    # 注册SIGTERM信号处理函数
     signal.signal(signal.SIGTERM, sigterm_handler)
 
+    # 获取事件循环
     loop = asyncio.get_event_loop()
+    # 创建启动监督器的异步任务
     task = loop.create_task(
         _start_supervisor(address=address, logging_conf=logging_conf)
     )
+    # 运行任务直到完成
     loop.run_until_complete(task)
 
 
 def run_in_subprocess(
     address: str, logging_conf: Optional[Dict] = None
 ) -> multiprocessing.Process:
+    # 创建一个新的进程来运行监督器
+    # 参数:
+    #   address: 监督器的地址
+    #   logging_conf: 可选的日志配置字典
+    # 返回:
+    #   multiprocessing.Process 对象
+
+    # 创建一个新的进程，目标函数为run，参数为address和logging_conf
     p = multiprocessing.Process(target=run, args=(address, logging_conf))
+    
+    # 启动新创建的进程
     p.start()
+    
+    # 返回进程对象
     return p
 
 

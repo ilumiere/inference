@@ -34,6 +34,16 @@ from ..utils import ChatModelMixin
 
 logger = logging.getLogger(__name__)
 
+# noqa 的含义：
+# "noqa" 是 "no quality assurance" 的缩写。
+# 它告诉代码检查工具忽略这一行的特定警告。
+# F401 的含义：
+# 这是 Flake8（一个流行的 Python 代码检查工具）中的一个特定错误代码。
+# F401 表示 "module imported but unused"（模块被导入但未使用）。
+# 为什么要使用 # noqa: F401：
+# 在这个例子中，lmdeploy 被导入但没有直接使用。
+# 通常，这会触发一个未使用导入的警告。
+# 但在这里，导入是为了检查模块是否可用，而不是为了直接使用它。
 try:
     import lmdeploy  # noqa: F401
 
@@ -48,37 +58,37 @@ LMDEPLOY_MODEL_CHAT_TEMPLATE_NAME = {
 
 
 class LMDeployModelConfig(TypedDict, total=False):
-    model_format: Optional[str]
-    tp: Optional[int]
-    session_len: Optional[int]
-    max_batch_size: Optional[int]
-    cache_max_entry_count: Optional[float]
-    cache_block_seq_len: Optional[int]
-    enable_prefix_caching: Optional[bool]
-    quant_policy: Optional[int]
-    rope_scaling_factor: Optional[float]
-    use_logn_attn: Optional[bool]
-    download_dir: Optional[str]
-    revision: Optional[str]
-    max_prefill_token_num: Optional[int]
-    num_tokens_per_iter: Optional[int]
-    max_prefill_iters: Optional[int]
+    model_format: Optional[str]  # 模型格式
+    tp: Optional[int]  # 张量并行度
+    session_len: Optional[int]  # 会话长度
+    max_batch_size: Optional[int]  # 最大批处理大小
+    cache_max_entry_count: Optional[float]  # 缓存最大条目数
+    cache_block_seq_len: Optional[int]  # 缓存块序列长度
+    enable_prefix_caching: Optional[bool]  # 是否启用前缀缓存
+    quant_policy: Optional[int]  # 量化策略
+    rope_scaling_factor: Optional[float]  # RoPE缩放因子
+    use_logn_attn: Optional[bool]  # 是否使用对数注意力
+    download_dir: Optional[str]  # 下载目录
+    revision: Optional[str]  # 模型版本
+    max_prefill_token_num: Optional[int]  # 最大预填充token数
+    num_tokens_per_iter: Optional[int]  # 每次迭代的token数
+    max_prefill_iters: Optional[int]  # 最大预填充迭代次数
 
 
 class LMDeployGenerateConfig(TypedDict, total=False):
-    n: Optional[int]
-    max_new_tokens: Optional[int]
-    top_p: Optional[float]
-    top_k: Optional[int]
-    temperature: Optional[float]
-    repetition_penalty: Optional[float]
-    ignore_eos: Optional[bool]
-    random_seed: Optional[int]
-    stop_words: Optional[List[str]]
-    bad_words: Optional[List[str]]
-    min_new_tokens: Optional[int]
-    skip_special_tokens: Optional[bool]
-    logprobs: Optional[int]
+    n: Optional[int]  # 生成的序列数量
+    max_new_tokens: Optional[int]  # 最大新生成的token数
+    top_p: Optional[float]  # 累积概率阈值
+    top_k: Optional[int]  # 保留的最高概率token数
+    temperature: Optional[float]  # 采样温度
+    repetition_penalty: Optional[float]  # 重复惩罚系数
+    ignore_eos: Optional[bool]  # 是否忽略结束符
+    random_seed: Optional[int]  # 随机种子
+    stop_words: Optional[List[str]]  # 停止词列表
+    bad_words: Optional[List[str]]  # 禁用词列表
+    min_new_tokens: Optional[int]  # 最小新生成的token数
+    skip_special_tokens: Optional[bool]  # 是否跳过特殊token
+    logprobs: Optional[int]  # 返回的对数概率数量
 
 
 class LMDeployModel(LLM):
@@ -92,27 +102,35 @@ class LMDeployModel(LLM):
         model_config: Optional[LMDeployModelConfig] = None,
         peft_model: Optional[List[LoRA]] = None,
     ):
+        # 调用父类的初始化方法
         super().__init__(model_uid, model_family, model_spec, quantization, model_path)
+        # 清理并设置模型配置
         self._model_config: LMDeployModelConfig = self._sanitize_model_config(
             model_config
         )
+        # 目前不支持LoRA，如果提供了peft_model，则抛出异常
         if peft_model is not None:
             raise ValueError("LMDEPLOY engine has not supported lora yet.")
 
     def _sanitize_model_config(
         self, model_config: Optional[LMDeployModelConfig]
     ) -> LMDeployModelConfig:
+        # 如果没有提供模型配置，则创建一个空的配置
         if model_config is None:
             model_config = LMDeployModelConfig()
+        # 设置默认的会话长度
         model_config.setdefault("session_len", 8192)
+        # 如果模型格式是AWQ，则设置模型格式为AWQ
         if self.model_spec.model_format == "awq":
             model_config.setdefault("model_format", "awq")
         return model_config
 
     def load(self):
+        # 尝试导入lmdeploy模块
         try:
             import lmdeploy  # noqa: F401, F811
         except ImportError:
+            # 如果导入失败，则提供安装指南
             error_message = "Failed to import module 'lmdeploy'"
             installation_guide = [
                 "Please make sure 'lmdeploy' is installed. ",
@@ -120,12 +138,14 @@ class LMDeployModel(LLM):
             ]
 
             raise ImportError(f"{error_message}\n\n{''.join(installation_guide)}")
+        # 目前不支持生成功能，抛出异常
         raise ValueError("LMDEPLOY engine has not supported generate yet.")
 
     @classmethod
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        # 目前总是返回False，表示不匹配任何模型
         return False
 
     def generate(
@@ -133,11 +153,13 @@ class LMDeployModel(LLM):
         prompt: str,
         generate_config: Optional[Dict] = None,
     ) -> Union[Completion, Iterator[ChatCompletionChunk]]:
+        # 生成功能尚未实现，抛出NotImplementedError异常
         raise NotImplementedError("LMDeploy generate ablility does not support now.")
 
 
 class LMDeployChatModel(LMDeployModel, ChatModelMixin):
     def load(self):
+        # 尝试导入必要的lmdeploy模块
         try:
             from lmdeploy import (
                 ChatTemplateConfig,
@@ -146,6 +168,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
                 pipeline,
             )
         except ImportError:
+            # 如果导入失败，提供安装指南
             error_message = "Failed to import module 'lmdeploy'"
             installation_guide = [
                 "Please make sure 'lmdeploy' is installed. ",
@@ -154,6 +177,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
 
             raise ImportError(f"{error_message}\n\n{''.join(installation_guide)}")
 
+        # 确定正确的聊天模板名称
         chat_temp_name = ""
         family = self.model_family.model_family or self.model_family.model_name
         for key in LMDEPLOY_MODEL_CHAT_TEMPLATE_NAME.keys():
@@ -163,14 +187,18 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
         if chat_temp_name == "":
             raise ValueError(f"Can not find correct chat template.")
 
+        # 配置聊天模板
         chat_template_config = ChatTemplateConfig(chat_temp_name)
         chat_template_config.meta_instruction = (
             self.model_family.prompt_style.system_prompt
         )
+        
+        # 检查是否有多个CUDA设备，如果有则设置张量并行
         count = torch.cuda.device_count()
         if count > 1:
             self._model_config.setdefault("tp", torch.cuda.device_count())
 
+        # 创建模型管道
         self._model = pipeline(
             self.model_path,
             chat_template_config=chat_template_config,
@@ -182,8 +210,10 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        # 检查模型是否匹配LMDeploy支持的条件
         if llm_spec.model_format == "awq":
             # Currently, only 4-bit weight quantization is supported for AWQ, but got 8 bits.
+            # 目前AWQ只支持4位权重量化
             if "4" not in quantization:
                 return False
         if llm_family.model_name not in LMDEPLOY_SUPPORTED_CHAT_MODELS:
@@ -197,6 +227,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
         chat_history: Optional[List[ChatCompletionMessage]] = None,
         generate_config: Optional[Dict] = None,
     ) -> Union[ChatCompletion, AsyncGenerator[ChatCompletionChunk, None]]:
+        # 异步聊天方法，支持流式和非流式输出
         stream = (
             generate_config.get("stream", False)
             if isinstance(generate_config, dict)
@@ -223,6 +254,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
             return self._to_chat_completion(chunk)
 
     async def _chat_stream(self, prompt, chat_history, include_usage):
+        # 流式聊天方法的实现
         from lmdeploy.messages import Response
 
         prompt_tokens, completion_tokens, total_tokens = 0, 0, 0
@@ -275,6 +307,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
             yield chunk
 
     async def _chat(self, prompt, chat_history):
+        # 非流式聊天方法的实现
         from lmdeploy.messages import Response
 
         response, finish_reason = "", ""
@@ -309,8 +342,8 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
         )
         return chunk
 
-    # copy from lmdeploy
-    # Reference: lmdeploy.serve.async_engine.py
+    # 从lmdeploy复制
+    # 参考: lmdeploy.serve.async_engine.py
     async def _generate(
         self,
         prompt,
@@ -320,12 +353,13 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
         tools: Optional[List[object]] = None,
         stream_response: bool = True,
         sequence_start: bool = True,
-        sequence_end: bool = True,  # no interactive mode by default
+        sequence_end: bool = True,  # 默认不使用交互模式
         step: int = 0,
         do_preprocess: bool = False,
         adapter_name: Optional[str] = None,
         **kwargs,
     ):
+        # 生成方法的核心实现
         import random
 
         from lmdeploy.messages import EngineGenerationConfig, GenerationConfig
@@ -334,6 +368,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
 
         session_id = -1
 
+        # 初始化或更新会话状态
         if str(session_id) not in self._model.id2step:
             self._model.id2step[str(session_id)] = 0
         if generate_config is None:
@@ -353,6 +388,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
             )
             generate_config.n = 1  # type: ignore
 
+        # 准备输入
         prompt_input = await self._get_prompt_input(prompt, chat_history)
         prompt = prompt_input["prompt"]
         input_ids = prompt_input["input_ids"]
@@ -372,8 +408,9 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
             f"step={step}, prep={do_preprocess}"
         )
 
+        # 调整最大新token数
         if generate_config.max_new_tokens is None:  # type: ignore
-            # for interactive endpoint, will try maximum possible token num
+            # 对于交互式端点，将尝试最大可能的token数
             generate_config.max_new_tokens = max(  # type: ignore
                 128,
                 self._model.session_len
@@ -394,6 +431,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
             )
             logger.error(f"Truncate max_new_tokens to {generate_config.max_new_tokens}")  # type: ignore
 
+        # 检查是否超出token限制
         if (
             self._model.id2step[str(session_id)]
             + len(input_ids)
@@ -407,6 +445,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
             if sequence_end is True and sequence_start is False:
                 await self._model.end_session(session_id)
         else:
+            # 开始生成过程
             generator = await self._model.get_generator(False, session_id)
             async with self._model.safe_run(session_id):
                 state = DetokenizeState(len(input_ids))
@@ -422,7 +461,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
                     sequence_end=sequence_end,
                     step=self._model.id2step[str(session_id)],
                 ):
-                    # decode res
+                    # 解码结果
                     res, tokens = (
                         input_ids + outputs.token_ids,
                         outputs.num_token,
@@ -455,6 +494,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
                         logprobs,
                     )
 
+                # 确定结束原因
                 finish_reason = (
                     "length" if tokens >= generate_config.max_new_tokens else "stop"  # type: ignore
                 )
@@ -469,17 +509,17 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
                     tokens,
                     finish_reason,
                 )
-                # update step
+                # 更新步骤
                 self._model.id2step[str(session_id)] += len(input_ids) + tokens
                 if sequence_end:
                     self._model.id2step[str(session_id)] = 0
-                # manually end pytorch session
-                # TODO modify pytorch or turbomind api
+                # 手动结束PyTorch会话
+                # TODO 修改PyTorch或TurboMind API
                 if self._model.backend == "pytorch" and sequence_end:
                     await self._model.end_session(session_id)
 
-    # copy from lmdeploy
-    # Reference: lmdeploy.serve.vl_async_engine.py
+    # 从lmdeploy复制
+    # 参考: lmdeploy.serve.vl_async_engine.py
     async def _get_prompt_input(
         self,
         prompt: Union[str, List[Dict]],
@@ -488,7 +528,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
         tools: Optional[List[object]] = None,
         **kwargs,
     ):
-        """get input_ids, embeddings and offsets."""
+        """获取input_ids、embeddings和offsets。"""
         IMAGE_TOKEN = "<IMAGE_TOKEN>"
         IMAGE_DUMMY_TOKEN_INDEX = 0
         import numpy as np
@@ -497,6 +537,7 @@ class LMDeployChatModel(LMDeployModel, ChatModelMixin):
         prompt_style = self.model_family.prompt_style.copy()
         chat_history = chat_history or []
 
+        # 准备提示
         decorated, _ = self.get_prompt(prompt, chat_history, prompt_style)  # type: ignore
         chat_history.append(ChatCompletionMessage(role="user", content=prompt))  # type: ignore
         prompt = chat_history  # type: ignore

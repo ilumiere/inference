@@ -19,6 +19,18 @@ from .core import ImageModelFamilyV1
 def get_model_version(
     image_model: ImageModelFamilyV1, controlnet: Optional[ImageModelFamilyV1]
 ) -> str:
+    """
+    获取模型版本字符串。
+
+    Args:
+        image_model (ImageModelFamilyV1): 图像模型。
+        controlnet (Optional[ImageModelFamilyV1]): 控制网络模型，可选。
+
+    Returns:
+        str: 模型版本字符串。
+            如果没有controlnet，返回image_model的名称；
+            如果有controlnet，返回image_model和controlnet名称的组合。
+    """
     return (
         image_model.model_name
         if controlnet is None

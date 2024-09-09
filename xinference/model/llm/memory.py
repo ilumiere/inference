@@ -41,26 +41,32 @@ logger = getLogger(__name__)
 
 @dataclass
 class ModelLayersInfo:
-    vocab_size: int
-    heads: int  # num_attention_heads, num_heads or n_head
-    hidden_dim: int  # hidden_size, d_model, or n_embd
-    inter_dim: int  # intermediate_size, n_inner or d_ff
-    num_layers: int  # num_layers, num_hidden_layers or n_layer
+    """
+    模型层信息的数据类
+    """
+    vocab_size: int  # 词汇表大小
+    heads: int  # 注意力头数量（也称为num_attention_heads, num_heads或n_head）
+    hidden_dim: int  # 隐藏层维度（也称为hidden_size, d_model或n_embd）
+    inter_dim: int  # 中间层维度（也称为intermediate_size, n_inner或d_ff）
+    num_layers: int  # 层数（也称为num_layers, num_hidden_layers或n_layer）
 
 
 @dataclass
 class ModelMemInfo:
-    """Memory required by model, unit in MB"""
+    """
+    模型内存信息的数据类，单位为MB
+    """
+    model_mem: int  # 模型参数占用的内存
+    kv_cache_mem: int  # KV缓存占用的内存
+    activation_mem: int  # 激活值占用的内存
+    overhead: int  # 额外开销
+    total: int  # 总内存占用
 
-    model_mem: int
-    kv_cache_mem: int
-    activation_mem: int
-    overhead: int
-    total: int
 
-
+# 量化方法的标准化映射
 QUANT_NORMALIZE = {"int4": "4-bit", "int8": "8-bit", "4-bit": "4-bit", "8-bit": "8-bit"}
 
+# GGUF格式不同量化方法的内存乘数因子
 GGUF_MULTI_FACTOR_DICT = {
     "q4_0": 18,
     "q4_1": 20,
@@ -70,6 +76,7 @@ GGUF_MULTI_FACTOR_DICT = {
     "q8_1": 40,
 }
 
+# GGUF格式64位量化方法的内存乘数因子
 GGUF_MULTI_FACTOR_DICT_64 = {
     "q6_K": 54.0,
     "q3": 26.0,
@@ -77,6 +84,7 @@ GGUF_MULTI_FACTOR_DICT_64 = {
     "q5": 46.0,
 }
 
+# GGUF格式组合量化方法的内存乘数因子
 GGUF_MULTI_FACTOR_DICT_COMBINE = {
     "q3_K_L": [38.0, 26.0],
     "q3_K_M": [46.0, 26.0],
@@ -87,17 +95,28 @@ GGUF_MULTI_FACTOR_DICT_COMBINE = {
 }
 
 
-# Return gpu memory in MB
+# 估算LLM GPU内存占用，返回单位为MB
 def estimate_llm_gpu_memory(
     model_size_in_billions: Union[str, int],
     quantization: Optional[str],
-    context_length: int,  # input+output
+    context_length: int,  # 输入+输出的总长度
     model_format: str,
     model_name: Optional[str] = None,
     kv_cache_dtype: int = 16,
 ) -> Optional[ModelMemInfo]:
     """
-    model_size_in_billions: must be str like 1_8 or 46_7, to match llm.
+    估算LLM GPU内存占用
+    
+    参数:
+    model_size_in_billions: 模型大小，必须是字符串如"1_8"或"46_7"，以匹配llm
+    quantization: 量化方法
+    context_length: 上下文长度（输入+输出）
+    model_format: 模型格式
+    model_name: 模型名称（可选）
+    kv_cache_dtype: KV缓存的数据类型（默认为16位）
+
+    返回:
+    ModelMemInfo对象，包含详细的内存占用信息
     """
     info = get_model_layers_info(
         model_size_in_billions,
@@ -122,13 +141,26 @@ def estimate_llm_gpu_memory_details(
     info: ModelLayersInfo,
     size_in_billions: float,
     quantization: Optional[str],
-    context_length: int,  # input+output
+    context_length: int,  # 输入+输出的总长度
     model_format: str,
     kv_cache_dtype: int = 16,
 ) -> ModelMemInfo:
-    """return model_mem, kv_cache, overhead, activation_mem"""
+    """
+    估算LLM GPU内存占用的详细信息
+    
+    参数:
+    info: ModelLayersInfo对象，包含模型层信息
+    size_in_billions: 模型大小（单位：十亿参数）
+    quantization: 量化方法
+    context_length: 上下文长度（输入+输出）
+    model_format: 模型格式
+    kv_cache_dtype: KV缓存的数据类型（默认为16位）
+
+    返回:
+    ModelMemInfo对象，包含模型内存、KV缓存、额外开销和激活内存的详细信息
+    """
     if kv_cache_dtype not in [8, 16, 32]:
-        raise ValueError(f"Invalid kv_cache_dtype {kv_cache_dtype}")
+        raise ValueError(f"无效的kv_cache_dtype {kv_cache_dtype}")
     if kv_cache_dtype == 8:
         kv_dtype_size = 1
     elif kv_cache_dtype == 16:
@@ -153,7 +185,7 @@ def estimate_llm_gpu_memory_details(
 
         model_size = size_in_billions * 1000000000.0
         model_size_in_mb = _convert_to_mb_model_size(model_size, quantization)
-        # KV cache
+        # KV缓存
         inference_mem = float(
             context_length * 2 * kv_dtype_size * info.hidden_dim * info.num_layers
         )
@@ -171,15 +203,34 @@ def estimate_llm_gpu_memory_details(
 
 
 def _load_item_from_json(config_data: Any, *keys: str) -> str:
+    """
+    从JSON配置中加载指定键的值
+    
+    参数:
+    config_data: JSON配置数据
+    *keys: 要查找的键名列表
+
+    返回:
+    找到的第一个非空值
+    """
     assert len(keys) > 0
     for key in keys:
         v = config_data.get(key)
         if v is not None:
             return v
-    raise ValueError("load ModelLayersInfo: missing %s" % (keys[0]))
+    raise ValueError("加载ModelLayersInfo时缺少 %s" % (keys[0]))
 
 
 def load_model_config_json(config_path: str) -> ModelLayersInfo:
+    """
+    从JSON配置文件加载模型层信息
+    
+    参数:
+    config_path: 配置文件路径
+
+    返回:
+    ModelLayersInfo对象
+    """
     with open(config_path, "r") as f:
         config_data = json.load(f)
         return ModelLayersInfo(
@@ -207,11 +258,23 @@ def get_model_layers_info(
     model_format: Optional[str],
     quantization: Optional[str],
 ) -> Optional[ModelLayersInfo]:
+    """
+    获取模型层信息
+    
+    参数:
+    model_size_in_billions: 模型大小
+    model_name: 模型名称
+    model_format: 模型格式
+    quantization: 量化方法
+
+    返回:
+    ModelLayersInfo对象或None
+    """
     from . import match_llm
     from .llm_family import cache_model_config
 
     if not model_name:
-        logger.debug("get_model_layers_info by default size=%s", model_size_in_billions)
+        logger.debug("通过默认大小获取模型层信息 size=%s", model_size_in_billions)
         size_in_billions = convert_model_size_to_float(model_size_in_billions)
         return _get_default_layers_from_size(size_in_billions)
     match_result = match_llm(
@@ -228,6 +291,15 @@ def get_model_layers_info(
 
 
 def _get_default_layers_from_size(size_in_billion: float) -> ModelLayersInfo:
+    """
+    根据模型大小获取默认的层信息
+    
+    参数:
+    size_in_billion: 模型大小（单位：十亿参数）
+
+    返回:
+    ModelLayersInfo对象
+    """
     if size_in_billion < 5:
         vocab_size = 32000
         heads = 32
@@ -265,6 +337,16 @@ def _get_default_layers_from_size(size_in_billion: float) -> ModelLayersInfo:
 
 
 def _convert_to_mb_model_size(model_size: float, quantization: Optional[str]) -> float:
+    """
+    将模型大小转换为MB单位
+    
+    参数:
+    model_size: 模型大小（单位：参数数量）
+    quantization: 量化方法
+
+    返回:
+    模型大小（单位：MB）
+    """
     extra = 0.0
     fB = 2.0
     size = (model_size * fB) / (1024.0 * 1024.0)
@@ -281,6 +363,16 @@ def _convert_to_mb_model_size(model_size: float, quantization: Optional[str]) ->
 def _compute_inference_only_activation_memory(
     context_length: int, info: ModelLayersInfo
 ) -> float:
+    """
+    计算仅推理时的激活内存
+    
+    参数:
+    context_length: 上下文长度
+    info: ModelLayersInfo对象
+
+    返回:
+    激活内存大小（单位：MB）
+    """
     hidden_dim = info.hidden_dim
     heads = info.heads
     ret = (
@@ -292,6 +384,16 @@ def _compute_inference_only_activation_memory(
 
 
 def _compute_model_size_gguf(info: ModelLayersInfo, quantization: str) -> float:
+    """
+    计算GGUF格式模型的大小
+    
+    参数:
+    info: ModelLayersInfo对象
+    quantization: 量化方法
+
+    返回:
+    模型大小（单位：MB）
+    """
     assert quantization is not None
     vocab_size = info.vocab_size
     num_layers = info.num_layers

@@ -38,25 +38,30 @@ logger = logging.getLogger(__name__)
 
 
 class MLXModelConfig(TypedDict, total=False):
-    revision: Optional[str]
-    max_gpu_memory: str
-    trust_remote_code: bool
+    revision: Optional[str]  # 模型的修订版本
+    max_gpu_memory: str  # 最大GPU内存使用量
+    trust_remote_code: bool  # 是否信任远程代码
 
 
 class MLXGenerateConfig(TypedDict, total=False):
-    max_tokens: int
-    temperature: float
-    repetition_penalty: Optional[float]
-    repetition_context_size: Optional[float]
-    top_p: float
-    logit_bias: Optional[Dict[int, float]]
-    stop: Optional[Union[str, List[str]]]
-    stop_token_ids: Optional[Union[int, List[int]]]
-    stream: bool
-    stream_options: Optional[Union[dict, None]]
+    max_tokens: int  # 生成的最大token数
+    temperature: float  # 生成的温度参数
+    repetition_penalty: Optional[float]  # 重复惩罚系数
+    repetition_context_size: Optional[float]  # 重复惩罚的上下文大小
+    top_p: float  # 用于nucleus采样的概率阈值
+    logit_bias: Optional[Dict[int, float]]  # token的logit偏置
+    stop: Optional[Union[str, List[str]]]  # 停止生成的字符串或字符串列表
+    stop_token_ids: Optional[Union[int, List[int]]]  # 停止生成的token ID或ID列表
+    stream: bool  # 是否使用流式输出
+    stream_options: Optional[Union[dict, None]]  # 流式输出的选项
 
 
 class MLXModel(LLM):
+    """
+    MLXModel类，用于处理MLX模型的加载、配置和生成。
+    继承自LLM基类。
+    """
+
     def __init__(
         self,
         model_uid: str,
@@ -67,6 +72,17 @@ class MLXModel(LLM):
         model_config: Optional[MLXModelConfig] = None,
         peft_model: Optional[List[LoRA]] = None,
     ):
+        """
+        初始化MLXModel实例。
+
+        :param model_uid: 模型的唯一标识符
+        :param model_family: 模型家族
+        :param model_spec: 模型规格
+        :param quantization: 量化方法
+        :param model_path: 模型路径
+        :param model_config: MLX模型配置
+        :param peft_model: PEFT模型列表
+        """
         super().__init__(model_uid, model_family, model_spec, quantization, model_path)
         self._use_fast_tokenizer = True
         self._model_config: MLXModelConfig = self._sanitize_model_config(model_config)
@@ -76,6 +92,12 @@ class MLXModel(LLM):
     def _sanitize_model_config(
         self, model_config: Optional[MLXModelConfig]
     ) -> MLXModelConfig:
+        """
+        清理并补充模型配置。
+
+        :param model_config: MLX模型配置
+        :return: 清理后的模型配置
+        """
         if model_config is None:
             model_config = MLXModelConfig()
         model_config.setdefault("revision", self.model_spec.model_revision)
@@ -86,6 +108,12 @@ class MLXModel(LLM):
         self,
         generate_config: Optional[MLXGenerateConfig],
     ) -> MLXGenerateConfig:
+        """
+        清理并补充生成配置。
+
+        :param generate_config: 生成配置
+        :return: 清理后的生成配置
+        """
         if generate_config is None:
             generate_config = MLXGenerateConfig()
 
@@ -100,6 +128,12 @@ class MLXModel(LLM):
         return generate_config
 
     def _load_model(self, **kwargs):
+        """
+        加载MLX模型。
+
+        :param kwargs: 额外的加载参数
+        :return: 加载的模型和分词器
+        """
         try:
             import mlx.core as mx
             from mlx_lm import load
@@ -135,6 +169,9 @@ class MLXModel(LLM):
         )
 
     def load(self):
+        """
+        加载MLX模型和分词器。
+        """
         kwargs = {}
         kwargs["revision"] = self._model_config.get(
             "revision", self.model_spec.model_revision
@@ -148,6 +185,14 @@ class MLXModel(LLM):
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        """
+        判断给定的模型家族、规格和量化方法是否匹配MLX模型。
+
+        :param llm_family: 模型家族
+        :param llm_spec: 模型规格
+        :param quantization: 量化方法
+        :return: 是否匹配
+        """
         if llm_spec.model_format not in ["mlx"]:
             return False
         if sys.platform != "darwin" or platform.processor() != "arm":
@@ -158,6 +203,13 @@ class MLXModel(LLM):
         return True
 
     def _generate_stream(self, prompt: str, kwargs: MLXGenerateConfig):
+        """
+        生成流式输出。
+
+        :param prompt: 输入提示
+        :param kwargs: 生成配置
+        :yield: 生成的完成块和使用情况
+        """
         import mlx.core as mx
         from mlx_lm.utils import generate_step
 
@@ -280,6 +332,13 @@ class MLXModel(LLM):
     def generate(
         self, prompt: str, generate_config: Optional[MLXGenerateConfig] = None
     ) -> Union[Completion, Iterator[CompletionChunk]]:
+        """
+        生成文本完成。
+
+        :param prompt: 输入提示
+        :param generate_config: 生成配置
+        :return: 完成结果或完成块迭代器
+        """
         def generator_wrapper(
             prompt: str, generate_config: MLXGenerateConfig
         ) -> Iterator[CompletionChunk]:
@@ -320,6 +379,11 @@ class MLXModel(LLM):
 
 
 class MLXChatModel(MLXModel, ChatModelMixin):
+    """
+    MLXChatModel类，用于处理MLX聊天模型。
+    继承自MLXModel和ChatModelMixin。
+    """
+
     def __init__(
         self,
         model_uid: str,
@@ -330,6 +394,17 @@ class MLXChatModel(MLXModel, ChatModelMixin):
         model_config: Optional[MLXModelConfig] = None,
         peft_model: Optional[List[LoRA]] = None,
     ):
+        """
+        初始化MLXChatModel实例。
+
+        :param model_uid: 模型的唯一标识符
+        :param model_family: 模型家族
+        :param model_spec: 模型规格
+        :param quantization: 量化方法
+        :param model_path: 模型路径
+        :param model_config: MLX模型配置
+        :param peft_model: PEFT模型列表
+        """
         super().__init__(
             model_uid,
             model_family,
@@ -344,6 +419,12 @@ class MLXChatModel(MLXModel, ChatModelMixin):
         self,
         generate_config: Optional[MLXGenerateConfig],
     ) -> MLXGenerateConfig:
+        """
+        清理并补充生成配置。
+
+        :param generate_config: 生成配置
+        :return: 清理后的生成配置
+        """
         generate_config = super()._sanitize_generate_config(generate_config)
         if (
             (not generate_config.get("stop"))
@@ -366,6 +447,14 @@ class MLXChatModel(MLXModel, ChatModelMixin):
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        """
+        判断给定的模型家族、规格和量化方法是否匹配MLX聊天模型。
+
+        :param llm_family: 模型家族
+        :param llm_spec: 模型规格
+        :param quantization: 量化方法
+        :return: 是否匹配
+        """
         if llm_spec.model_format not in ["mlx"]:
             return False
         if sys.platform != "darwin" or platform.processor() != "arm":
@@ -382,6 +471,15 @@ class MLXChatModel(MLXModel, ChatModelMixin):
         chat_history: Optional[List[ChatCompletionMessage]] = None,
         generate_config: Optional[MLXGenerateConfig] = None,
     ) -> Union[ChatCompletion, Iterator[ChatCompletionChunk]]:
+        """
+        执行聊天生成。
+
+        :param prompt: 用户输入的提示
+        :param system_prompt: 系统提示
+        :param chat_history: 聊天历史
+        :param generate_config: 生成配置
+        :return: 聊天完成或聊天完成块迭代器
+        """
         tools = generate_config.pop("tools", []) if generate_config else None  # type: ignore
         full_prompt = self.get_full_prompt(
             self.model_family, prompt, system_prompt, chat_history, tools

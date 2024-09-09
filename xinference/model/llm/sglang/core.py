@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# 导入必要的模块
 import json
 import logging
 import time
 import uuid
 from typing import AsyncGenerator, Dict, List, Optional, TypedDict, Union
 
+# 导入自定义类型
 from ....types import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -27,42 +29,44 @@ from ....types import (
     CompletionChunk,
     CompletionUsage,
 )
+# 导入基类和工具类
 from .. import LLM, LLMFamilyV1, LLMSpecV1
 from ..llm_family import CustomLLMFamilyV1
 from ..utils import ChatModelMixin
 
+# 设置日志记录器
 logger = logging.getLogger(__name__)
 
-
+# 定义SGLANGModelConfig类型，用于配置SGLANG模型
 class SGLANGModelConfig(TypedDict, total=False):
-    tokenizer_mode: str
-    trust_remote_code: bool
-    tp_size: int
-    mem_fraction_static: float
-    log_level: str
-    attention_reduce_in_fp32: bool  # For gemma
+    tokenizer_mode: str  # 分词器模式
+    trust_remote_code: bool  # 是否信任远程代码
+    tp_size: int  # 张量并行大小
+    mem_fraction_static: float  # 静态内存分配比例
+    log_level: str  # 日志级别
+    attention_reduce_in_fp32: bool  # 是否在fp32精度下进行注意力计算（用于gemma模型）
 
-
+# 定义SGLANGGenerateConfig类型，用于配置SGLANG生成参数
 class SGLANGGenerateConfig(TypedDict, total=False):
-    presence_penalty: float
-    frequency_penalty: float
-    temperature: float
-    top_p: float
-    top_k: int
-    max_new_tokens: int
-    stop: Optional[Union[str, List[str]]]
-    ignore_eos: bool
-    stream: bool
-    stream_options: Optional[Union[dict, None]]
+    presence_penalty: float  # 存在惩罚
+    frequency_penalty: float  # 频率惩罚
+    temperature: float  # 温度
+    top_p: float  # Top-p采样
+    top_k: int  # Top-k采样
+    max_new_tokens: int  # 最大新生成token数
+    stop: Optional[Union[str, List[str]]]  # 停止词
+    ignore_eos: bool  # 是否忽略结束符
+    stream: bool  # 是否使用流式输出
+    stream_options: Optional[Union[dict, None]]  # 流式输出选项
 
-
+# 尝试导入sglang模块，并设置SGLANG_INSTALLED标志
 try:
     import sglang  # noqa: F401
-
     SGLANG_INSTALLED = True
 except ImportError:
     SGLANG_INSTALLED = False
 
+# 定义SGLANG支持的模型列表
 SGLANG_SUPPORTED_MODELS = [
     "llama-2",
     "llama-3",
@@ -70,6 +74,8 @@ SGLANG_SUPPORTED_MODELS = [
     "mistral-v0.1",
     "mixtral-v0.1",
 ]
+
+# 定义SGLANG支持的聊天模型列表
 SGLANG_SUPPORTED_CHAT_MODELS = [
     "llama-2-chat",
     "llama-3-instruct",
@@ -87,6 +93,11 @@ SGLANG_SUPPORTED_CHAT_MODELS = [
 
 
 class SGLANGModel(LLM):
+    """
+    SGLANGModel 类，用于处理SGLANG模型的加载、配置和生成。
+    继承自LLM基类。
+    """
+
     def __init__(
         self,
         model_uid: str,
@@ -96,11 +107,24 @@ class SGLANGModel(LLM):
         model_path: str,
         model_config: Optional[SGLANGModelConfig],
     ):
+        """
+        初始化SGLANGModel实例。
+
+        :param model_uid: 模型的唯一标识符
+        :param model_family: 模型家族
+        :param model_spec: 模型规格
+        :param quantization: 量化方法
+        :param model_path: 模型路径
+        :param model_config: SGLANG模型配置
+        """
         super().__init__(model_uid, model_family, model_spec, quantization, model_path)
         self._model_config = model_config
         self._engine = None
 
     def load(self):
+        """
+        加载SGLANG模型。
+        """
         try:
             import sglang as sgl
         except ImportError:
@@ -131,12 +155,21 @@ class SGLANGModel(LLM):
         )
 
     def stop(self):
+        """
+        停止SGLANG引擎。
+        """
         logger.info("Stopping SGLang engine")
         self._engine.shutdown()
 
     def _sanitize_model_config(
         self, model_config: Optional[SGLANGModelConfig]
     ) -> SGLANGModelConfig:
+        """
+        清理和标准化模型配置。
+
+        :param model_config: 原始模型配置
+        :return: 标准化后的模型配置
+        """
         if model_config is None:
             model_config = SGLANGModelConfig()
 
@@ -166,6 +199,12 @@ class SGLANGModel(LLM):
     def _sanitize_generate_config(
         generate_config: Optional[SGLANGGenerateConfig] = None,
     ) -> SGLANGGenerateConfig:
+        """
+        清理和标准化生成配置。
+
+        :param generate_config: 原始生成配置
+        :return: 标准化后的生成配置
+        """
         if generate_config is None:
             generate_config = SGLANGGenerateConfig()
 
@@ -191,6 +230,14 @@ class SGLANGModel(LLM):
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        """
+        检查给定的模型家族、规格和量化方法是否匹配SGLANG模型。
+
+        :param llm_family: 模型家族
+        :param llm_spec: 模型规格
+        :param quantization: 量化方法
+        :return: 是否匹配
+        """
         if not cls._has_cuda_device():
             return False
         if not cls._is_linux():
@@ -218,6 +265,14 @@ class SGLANGModel(LLM):
     def _convert_state_to_completion_chunk(
         request_id: str, model: str, output_text: str
     ) -> CompletionChunk:
+        """
+        将状态转换为完成块。
+
+        :param request_id: 请求ID
+        :param model: 模型名称
+        :param output_text: 输出文本
+        :return: 完成块
+        """
         choices: List[CompletionChoice] = [
             CompletionChoice(
                 text=output_text,
@@ -239,6 +294,15 @@ class SGLANGModel(LLM):
     def _convert_state_to_completion(
         request_id: str, model: str, output_text: str, meta_info: Dict
     ) -> Completion:
+        """
+        将状态转换为完成对象。
+
+        :param request_id: 请求ID
+        :param model: 模型名称
+        :param output_text: 输出文本
+        :param meta_info: 元信息
+        :return: 完成对象
+        """
         choices = [
             CompletionChoice(
                 text=output_text,
@@ -264,11 +328,24 @@ class SGLANGModel(LLM):
 
     @classmethod
     def _filter_sampling_params(cls, sampling_params: dict):
+        """
+        过滤采样参数。
+
+        :param sampling_params: 采样参数
+        :return: 过滤后的采样参数
+        """
         if not sampling_params.get("lora_name"):
             sampling_params.pop("lora_name", None)
         return sampling_params
 
     async def _stream_generate(self, prompt: str, **sampling_params):
+        """
+        流式生成文本。
+
+        :param prompt: 提示文本
+        :param sampling_params: 采样参数
+        :yield: 生成的文本块和元信息
+        """
         import aiohttp
 
         sampling_params = self._filter_sampling_params(sampling_params)
@@ -302,6 +379,13 @@ class SGLANGModel(LLM):
                                 break
 
     async def _non_stream_generate(self, prompt: str, **sampling_params) -> dict:
+        """
+        非流式生成文本。
+
+        :param prompt: 提示文本
+        :param sampling_params: 采样参数
+        :return: 生成的文本和元信息
+        """
         import aiohttp
 
         sampling_params = self._filter_sampling_params(sampling_params)
@@ -320,6 +404,13 @@ class SGLANGModel(LLM):
         prompt: str,
         generate_config: Optional[SGLANGGenerateConfig] = None,
     ) -> Union[Completion, AsyncGenerator[CompletionChunk, None]]:
+        """
+        异步生成文本。
+
+        :param prompt: 提示文本
+        :param generate_config: 生成配置
+        :return: 完成对象或完成块的异步生成器
+        """
         sanitized_generate_config = self._sanitize_generate_config(generate_config)
         logger.debug(
             "Enter generate, prompt: %s, generate config: %s", prompt, generate_config
@@ -380,10 +471,23 @@ class SGLANGModel(LLM):
 
 
 class SGLANGChatModel(SGLANGModel, ChatModelMixin):
+    """
+    SGLANGChatModel 类，用于处理SGLANG模型的聊天功能。
+    继承自SGLANGModel和ChatModelMixin。
+    """
+
     @classmethod
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        """
+        判断给定的模型家族、规格和量化方法是否匹配SGLANG聊天模型。
+
+        :param llm_family: 模型家族
+        :param llm_spec: 模型规格
+        :param quantization: 量化方法
+        :return: 是否匹配
+        """
         if llm_spec.model_format not in ["pytorch", "gptq", "awq", "fp8"]:
             return False
         if llm_spec.model_format == "pytorch":
@@ -407,6 +511,12 @@ class SGLANGChatModel(SGLANGModel, ChatModelMixin):
         self,
         generate_config: Optional[Dict] = None,
     ) -> Dict:
+        """
+        清理并补充聊天配置。
+
+        :param generate_config: 生成配置
+        :return: 清理后的生成配置
+        """
         if not generate_config:
             generate_config = {}
         if self.model_family.prompt_style:
@@ -423,6 +533,15 @@ class SGLANGChatModel(SGLANGModel, ChatModelMixin):
         chat_history: Optional[List[ChatCompletionMessage]] = None,
         generate_config: Optional[Dict] = None,
     ) -> Union[ChatCompletion, AsyncGenerator[ChatCompletionChunk, None]]:
+        """
+        异步执行聊天生成。
+
+        :param prompt: 用户输入的提示
+        :param system_prompt: 系统提示
+        :param chat_history: 聊天历史
+        :param generate_config: 生成配置
+        :return: 聊天完成或聊天完成块的异步生成器
+        """
         assert self.model_family.prompt_style is not None
         prompt_style = self.model_family.prompt_style.copy()
         if system_prompt:

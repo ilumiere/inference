@@ -16,18 +16,31 @@ import importlib
 
 
 def get_launcher(launcher_name: str):
+    """
+    根据给定的启动器名称获取启动器函数。
+
+    :param launcher_name: 启动器的名称，可以是完整的模块路径或单个函数名
+    :return: 启动器函数
+    :raises ValueError: 如果找不到指定的启动器
+    :raises ImportError: 如果导入启动器模块失败
+    """
     try:
+        # 查找最后一个点的位置，用于分割模块名和函数名
         i = launcher_name.rfind(".")
         if i != -1:
+            # 如果存在点，则分别导入模块和获取函数
             module = importlib.import_module(launcher_name[:i])
             fn = getattr(module, launcher_name[i + 1 :])
         else:
+            # 如果不存在点，则直接导入整个模块
             importlib.import_module(launcher_name)
             fn = locals().get(launcher_name)
 
+        # 检查是否成功获取到启动器函数
         if fn is None:
-            raise ValueError(f"Launcher {launcher_name} not found.")
+            raise ValueError(f"启动器 {launcher_name} 未找到。")
 
         return fn
     except ImportError as e:
-        raise ImportError(f"Failed to import {launcher_name}: {e}")
+        # 如果导入失败，抛出带有详细信息的ImportError
+        raise ImportError(f"导入 {launcher_name} 失败: {e}")

@@ -26,21 +26,22 @@ class ModelDescription(ABC):
         devices: Optional[List[str]],
         model_path: Optional[str] = None,
     ):
-        self.address = address
-        self.devices = devices
-        self._model_path = model_path
+        # 初始化模型描述
+        self.address = address  # 模型地址
+        self.devices = devices  # 设备列表
+        self._model_path = model_path  # 模型路径
 
     def to_dict(self):
         """
-        Return a dict to describe some information about model.
-        :return:
+        返回一个字典来描述模型的一些信息。
+        :return: 包含模型信息的字典
         """
         raise NotImplementedError
 
     @abstractmethod
     def to_version_info(self):
         """
-        Return a dict to describe version info about a model instance
+        返回一个字典来描述模型实例的版本信息
         """
 
 
@@ -59,6 +60,7 @@ def create_model_instance(
     model_path: Optional[str] = None,
     **kwargs,
 ) -> Tuple[Any, ModelDescription]:
+    # 导入各种模型实例创建函数
     from .audio.core import create_audio_model_instance
     from .embedding.core import create_embedding_model_instance
     from .flexible.core import create_flexible_model_instance
@@ -67,7 +69,9 @@ def create_model_instance(
     from .rerank.core import create_rerank_model_instance
     from .video.core import create_video_model_instance
 
+    # 根据模型类型创建相应的模型实例
     if model_type == "LLM":
+        # 创建大语言模型实例
         return create_llm_model_instance(
             subpool_addr,
             devices,
@@ -83,7 +87,8 @@ def create_model_instance(
             **kwargs,
         )
     elif model_type == "embedding":
-        # embedding model doesn't accept trust_remote_code
+        # 创建嵌入模型实例
+        # 嵌入模型不接受trust_remote_code参数
         kwargs.pop("trust_remote_code", None)
         return create_embedding_model_instance(
             subpool_addr,
@@ -95,6 +100,7 @@ def create_model_instance(
             **kwargs,
         )
     elif model_type == "image":
+        # 创建图像模型实例
         kwargs.pop("trust_remote_code", None)
         return create_image_model_instance(
             subpool_addr,
@@ -107,6 +113,7 @@ def create_model_instance(
             **kwargs,
         )
     elif model_type == "rerank":
+        # 创建重排序模型实例
         kwargs.pop("trust_remote_code", None)
         return create_rerank_model_instance(
             subpool_addr,
@@ -118,6 +125,7 @@ def create_model_instance(
             **kwargs,
         )
     elif model_type == "audio":
+        # 创建音频模型实例
         kwargs.pop("trust_remote_code", None)
         return create_audio_model_instance(
             subpool_addr,
@@ -129,6 +137,7 @@ def create_model_instance(
             **kwargs,
         )
     elif model_type == "video":
+        # 创建视频模型实例
         kwargs.pop("trust_remote_code", None)
         return create_video_model_instance(
             subpool_addr,
@@ -140,16 +149,18 @@ def create_model_instance(
             **kwargs,
         )
     elif model_type == "flexible":
+        # 创建灵活模型实例
         kwargs.pop("trust_remote_code", None)
         return create_flexible_model_instance(
             subpool_addr, devices, model_uid, model_name, model_path, **kwargs
         )
     else:
-        raise ValueError(f"Unsupported model type: {model_type}.")
+        # 如果提供了不支持的模型类型，则抛出异常
+        raise ValueError(f"不支持的模型类型: {model_type}.")
 
 
 class CacheableModelSpec(BaseModel):
-    model_name: str
-    model_id: str
-    model_revision: Optional[str]
-    model_hub: str = "huggingface"
+    model_name: str  # 模型名称
+    model_id: str  # 模型ID
+    model_revision: Optional[str]  # 模型版本
+    model_hub: str = "huggingface"  # 模型中心，默认为huggingface

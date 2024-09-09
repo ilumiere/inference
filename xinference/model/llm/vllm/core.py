@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+# 导入必要的模块
 import asyncio
 import json
 import logging
@@ -31,6 +31,7 @@ from typing import (
     Union,
 )
 
+# 导入自定义类型
 from ....types import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -43,16 +44,19 @@ from ....types import (
     ToolCallFunction,
     ToolCalls,
 )
+# 导入LLM相关类和工具
 from .. import LLM, LLMFamilyV1, LLMSpecV1
 from ..llm_family import CustomLLMFamilyV1
 from ..utils import QWEN_TOOL_CALL_FAMILY, ChatModelMixin
 
+# 设置日志记录器
 logger = logging.getLogger(__name__)
 
+# 类型检查时导入RequestOutput
 if TYPE_CHECKING:
     from vllm.outputs import RequestOutput
 
-
+# VLLM模型配置类
 class VLLMModelConfig(TypedDict, total=False):
     tokenizer_mode: Optional[str]
     trust_remote_code: bool
@@ -65,7 +69,7 @@ class VLLMModelConfig(TypedDict, total=False):
     quantization: Optional[str]
     max_model_len: Optional[int]
 
-
+# VLLM生成配置类
 class VLLMGenerateConfig(TypedDict, total=False):
     lora_name: Optional[str]
     n: int
@@ -78,13 +82,12 @@ class VLLMGenerateConfig(TypedDict, total=False):
     max_tokens: int
     stop_token_ids: Optional[List[int]]
     stop: Optional[Union[str, List[str]]]
-    stream: bool  # non-sampling param, should not be passed to the engine.
+    stream: bool  # 非采样参数，不应传递给引擎
     stream_options: Optional[Union[dict, None]]
 
-
+# 尝试导入vllm模块，并设置安装标志
 try:
     import vllm  # noqa: F401
-
     VLLM_INSTALLED = True
 except ImportError:
     VLLM_INSTALLED = False
@@ -166,6 +169,11 @@ if VLLM_INSTALLED and vllm.__version__ > "0.5.3":
 
 
 class VLLMModel(LLM):
+    """
+    VLLMModel类，用于处理VLLM模型的加载、配置和生成。
+    继承自LLM基类。
+    """
+
     def __init__(
         self,
         model_uid: str,
@@ -176,6 +184,17 @@ class VLLMModel(LLM):
         model_config: Optional[VLLMModelConfig],
         peft_model: Optional[List[LoRA]] = None,
     ):
+        """
+        初始化VLLMModel实例。
+
+        :param model_uid: 模型的唯一标识符
+        :param model_family: 模型家族
+        :param model_spec: 模型规格
+        :param quantization: 量化方法
+        :param model_path: 模型路径
+        :param model_config: VLLM模型配置
+        :param peft_model: PEFT模型列表
+        """
         try:
             from vllm.lora.request import LoRARequest
         except ImportError:
@@ -193,6 +212,9 @@ class VLLMModel(LLM):
         self.lora_requests: List[LoRARequest] = []
 
     def load(self):
+        """
+        加载VLLM模型。
+        """
         try:
             import vllm
             from vllm.engine.arg_utils import AsyncEngineArgs
@@ -251,6 +273,9 @@ class VLLMModel(LLM):
             self._check_health_task = asyncio.create_task(self._check_healthy())
 
     def stop(self):
+        """
+        停止VLLM引擎。
+        """
         # though the vLLM engine will shutdown when deleted,
         # but some issue e.g. GH#1682 reported
         # when deleting, the engine exists still
@@ -262,6 +287,11 @@ class VLLMModel(LLM):
         self._engine = None
 
     async def _check_healthy(self, interval: int = 30):
+        """
+        定期检查VLLM引擎的健康状态。
+
+        :param interval: 检查间隔时间（秒）
+        """
         from vllm.engine.async_llm_engine import AsyncEngineDeadError
 
         logger.debug("Begin to check health of vLLM")
@@ -284,6 +314,12 @@ class VLLMModel(LLM):
     def _sanitize_model_config(
         self, model_config: Optional[VLLMModelConfig]
     ) -> VLLMModelConfig:
+        """
+        清理并补充模型配置。
+
+        :param model_config: 原始模型配置
+        :return: 清理后的模型配置
+        """
         if model_config is None:
             model_config = VLLMModelConfig()
 
@@ -305,6 +341,12 @@ class VLLMModel(LLM):
     def _sanitize_generate_config(
         generate_config: Optional[Dict] = None,
     ) -> VLLMGenerateConfig:
+        """
+        清理并补充生成配置。
+
+        :param generate_config: 原始生成配置
+        :return: 清理后的生成配置
+        """
         if not generate_config:
             generate_config = {}
 
@@ -337,6 +379,14 @@ class VLLMModel(LLM):
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        """
+        判断给定的模型家族、规格和量化方法是否匹配VLLM模型。
+
+        :param llm_family: 模型家族
+        :param llm_spec: 模型规格
+        :param quantization: 量化方法
+        :return: 是否匹配
+        """
         if not cls._has_cuda_device():
             return False
         if not cls._is_linux():
@@ -371,6 +421,14 @@ class VLLMModel(LLM):
     def _convert_request_output_to_completion_chunk(
         request_id: str, model: str, request_output: "RequestOutput"
     ) -> CompletionChunk:
+        """
+        将请求输出转换为完成块。
+
+        :param request_id: 请求ID
+        :param model: 模型名称
+        :param request_output: 请求输出
+        :return: 完成块
+        """
         choices: List[CompletionChoice] = []
         for output in request_output.outputs:
             choices.append(
@@ -393,6 +451,14 @@ class VLLMModel(LLM):
     def _convert_request_output_to_completion(
         request_id: str, model: str, request_output: "RequestOutput"
     ) -> Completion:
+        """
+        将请求输出转换为完成对象。
+
+        :param request_id: 请求ID
+        :param model: 模型名称
+        :param request_output: 请求输出
+        :return: 完成对象
+        """
         choices = []
         for output in request_output.outputs:
             choices.append(
@@ -428,6 +494,14 @@ class VLLMModel(LLM):
         generate_config: Optional[Dict] = None,
         tools: object = False,
     ) -> Union[Completion, AsyncGenerator[CompletionChunk, None]]:
+        """
+        异步生成文本。
+
+        :param prompt: 提示文本或字典
+        :param generate_config: 生成配置
+        :param tools: 是否使用工具
+        :return: 完成对象或异步生成器
+        """
         try:
             from vllm.sampling_params import SamplingParams
         except ImportError:
@@ -557,10 +631,23 @@ class VLLMModel(LLM):
 
 
 class VLLMChatModel(VLLMModel, ChatModelMixin):
+    """
+    VLLMChatModel类，用于处理VLLM聊天模型。
+    继承自VLLMModel和ChatModelMixin。
+    """
+
     @classmethod
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        """
+        判断给定的模型家族、规格和量化方法是否匹配VLLMChatModel。
+
+        :param llm_family: LLM模型家族
+        :param llm_spec: LLM模型规格
+        :param quantization: 量化方法
+        :return: 如果匹配返回True，否则返回False
+        """
         if llm_spec.model_format not in ["pytorch", "gptq", "awq", "fp8"]:
             return False
         if llm_spec.model_format == "pytorch":
@@ -591,6 +678,12 @@ class VLLMChatModel(VLLMModel, ChatModelMixin):
         self,
         generate_config: Optional[Dict] = None,
     ) -> Dict:
+        """
+        清理并准备聊天配置。
+
+        :param generate_config: 生成配置字典
+        :return: 处理后的生成配置字典
+        """
         if not generate_config:
             generate_config = {}
         if self.model_family.prompt_style:
@@ -612,6 +705,15 @@ class VLLMChatModel(VLLMModel, ChatModelMixin):
         chat_history: Optional[List[ChatCompletionMessage]] = None,
         generate_config: Optional[Dict] = None,
     ) -> Union[ChatCompletion, AsyncGenerator[ChatCompletionChunk, None]]:
+        """
+        异步执行聊天生成。
+
+        :param prompt: 用户输入的提示
+        :param system_prompt: 系统提示
+        :param chat_history: 聊天历史记录
+        :param generate_config: 生成配置
+        :return: 聊天完成结果或异步生成器
+        """
         assert self.model_family.prompt_style is not None
         prompt_style = self.model_family.prompt_style.copy()
         if system_prompt:
@@ -650,10 +752,23 @@ class VLLMChatModel(VLLMModel, ChatModelMixin):
 
 
 class VLLMVisionModel(VLLMModel, ChatModelMixin):
+    """
+    VLLMVisionModel类，用于处理支持视觉功能的VLLM模型。
+    继承自VLLMModel和ChatModelMixin。
+    """
+
     @classmethod
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        """
+        判断给定的模型家族、规格和量化方法是否匹配VLLMVisionModel。
+
+        :param llm_family: LLM模型家族
+        :param llm_spec: LLM模型规格
+        :param quantization: 量化方法
+        :return: 如果匹配返回True，否则返回False
+        """
         if llm_spec.model_format != "pytorch":
             return False
         if llm_spec.model_format == "pytorch":
@@ -673,6 +788,12 @@ class VLLMVisionModel(VLLMModel, ChatModelMixin):
         self,
         generate_config: Optional[Dict] = None,
     ) -> Dict:
+        """
+        清理并准备聊天配置。
+
+        :param generate_config: 生成配置字典
+        :return: 处理后的生成配置字典
+        """
         if not generate_config:
             generate_config = {}
         if self.model_family.prompt_style:
@@ -690,7 +811,16 @@ class VLLMVisionModel(VLLMModel, ChatModelMixin):
         chat_history: Optional[List[ChatCompletionMessage]] = None,
         generate_config: Optional[Dict] = None,
     ) -> Union[ChatCompletion, AsyncGenerator[ChatCompletionChunk, None]]:
-        # only support single image, waiting vllm support multi images
+        """
+        异步执行聊天生成。
+
+        :param prompt: 用户输入的提示
+        :param system_prompt: 系统提示（可选）
+        :param chat_history: 聊天历史记录（可选）
+        :param generate_config: 生成配置（可选）
+        :return: 聊天完成结果或异步生成器
+        """
+        # 仅支持单张图片，等待vllm支持多图片输入
         assert self.model_family.prompt_style is not None
         prompt_style = self.model_family.prompt_style.copy()
         chat_history = chat_history or []

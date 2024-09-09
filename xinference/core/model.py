@@ -72,55 +72,78 @@ XINFERENCE_BATCHING_ALLOWED_VISION_MODELS = ["qwen-vl-chat", "cogvlm2", "glm-4v"
 
 def request_limit(fn):
     """
-    Used by ModelActor.
-    As a decorator, added to a ModelActor method to control
-    how many requests are accessing that method at the same time.
+    用于ModelActor的装饰器。
+    添加到ModelActor方法上，用于控制同时访问该方法的请求数量。
+    每当一个新的请求开始处理时，如果没有超过限制，serve_count 就会增加 1。
+    当请求处理完成时（无论成功与否），serve_count 会减少 1。
     """
 
     async def wrapped_func(self, *args, **kwargs):
+        # 记录请求信息，包括方法名、当前服务请求数和请求限制
         logger.debug(
-            f"Request {fn.__name__}, current serve request count: {self._serve_count}, request limit: {self._request_limits} for the model {self.model_uid()}"
+            f"请求 {fn.__name__}, 当前服务请求数: {self._serve_count}, 请求限制: {self._request_limits}, 模型: {self.model_uid()}"
         )
+        
+        # 如果设置了请求限制
         if self._request_limits is not None:
+            # 检查是否超过请求限制
             if 1 + self._serve_count <= self._request_limits:
-                self._serve_count += 1
+                self._serve_count += 1  # 增加当前服务请求数
             else:
+                # 如果超过限制，抛出运行时错误
                 raise RuntimeError(
-                    f"Rate limit reached for the model. Request limit {self._request_limits} for the model: {self.model_uid()}"
+                    f"模型达到速率限制。模型 {self.model_uid()} 的请求限制为 {self._request_limits}"
                 )
         try:
+            # 执行被装饰的方法
             ret = await fn(self, *args, **kwargs)
         finally:
+            # 无论方法是否成功执行，都要减少服务请求数
             if self._request_limits is not None:
                 self._serve_count -= 1
+            # 记录请求完成后的信息
             logger.debug(
-                f"After request {fn.__name__}, current serve request count: {self._serve_count} for the model {self.model_uid()}"
+                f"请求 {fn.__name__} 完成后，当前服务请求数: {self._serve_count}, 模型: {self.model_uid()}"
             )
         return ret
 
     return wrapped_func
 
-
 def oom_check(fn):
+    """
+    装饰器函数，用于检查内存溢出错误。
+    如果发生OutOfMemoryError，记录异常并强制终止程序。
+
+    :param fn: 被装饰的函数
+    :return: 包装后的函数
+    """
     @functools.wraps(fn)
     def _wrapper(*args, **kwargs):
+        """
+        同步函数的包装器
+        """
         try:
             return fn(*args, **kwargs)
         except OutOfMemoryError:
-            logger.exception("Model actor is out of memory.")
-            os._exit(1)
+            logger.exception("模型执行器内存不足。")
+            os._exit(1)  # 强制终止程序
 
     @functools.wraps(fn)
     async def _async_wrapper(*args, **kwargs):
+        """
+        异步函数的包装器
+        """
         try:
             return await fn(*args, **kwargs)
         except OutOfMemoryError:
-            logger.exception("Model actor is out of memory.")
-            os._exit(1)
+            logger.exception("模型执行器内存不足。")
+            os._exit(1)  # 强制终止程序
 
-    assert not inspect.isasyncgen(fn)
-    assert not inspect.isgenerator(fn)
+    # 确保被装饰的函数不是异步生成器或同步生成器
+    assert not inspect.isasyncgen(fn), "不支持异步生成器"
+    assert not inspect.isgenerator(fn), "不支持同步生成器"
 
+    # 根据函数类型返回相应的包装器
     if asyncio.iscoroutinefunction(fn):
         return _async_wrapper
     else:
@@ -165,6 +188,10 @@ class ModelActor(xo.StatelessActor):
         return f"{model.__class__}-model-actor"
 
     async def __pre_destroy__(self):
+        # __pre_destroy__ 方法：
+        # 这是一个特殊的方法，通常在 Actor 系统（如 xoscar）中使用。
+        # 它在 Actor 被销毁之前自动调用，用于执行清理操作。
+        # 这个方法允许 Actor 在被完全销毁之前释放资源、关闭连接等。
         # 在销毁模型之前执行的清理操作
         from ..model.embedding.core import EmbeddingModel
         from ..model.llm.sglang.core import SGLANGModel
@@ -204,7 +231,12 @@ class ModelActor(xo.StatelessActor):
                 raise ImportError(f"{error_message}\n\n{''.join(installation_guide)}")
 
             # 删除模型，执行垃圾回收和清空缓存
+            # gc.collect() 强制执行Python的垃圾收集。
+            # 在这里单独调用它是为了确保所有不再使用的对象（特别是大型的机器学习模型）被及时回收。
             del self._model
+            # 大型对象：机器学习模型通常是内存密集型的，可能不会立即被Python的常规垃圾收集机制回收。
+            # 内存释放：强制垃圾收集可以更快地释放内存，这在资源受限的环境中特别重要。
+            # 确保清理：某些对象可能有复杂的引用关系，手动触发垃圾收集可以确保它们被正确处理。
             gc.collect()
             empty_cache()
 
@@ -312,9 +344,12 @@ class ModelActor(xo.StatelessActor):
         from .worker import WorkerActor
 
         if self._worker_ref is None:
+            # 如果工作节点引用不存在，则创建一个新的引用
             self._worker_ref = await xo.actor_ref(
-                address=self._worker_address, uid=WorkerActor.uid()
+                address=self._worker_address,  # 使用预设的工作节点地址
+                uid=WorkerActor.uid()  # 使用WorkerActor的唯一标识符
             )
+        # 返回工作节点引用，可能是新创建的或已存在的
         return self._worker_ref
 
     def is_vllm_backend(self) -> bool:
@@ -322,17 +357,21 @@ class ModelActor(xo.StatelessActor):
         from ..model.llm.vllm.core import VLLMModel
 
         return isinstance(self._model, VLLMModel)
-
     def allow_batching(self) -> bool:
         # 检查是否允许批处理
         from ..model.llm.transformers.core import PytorchModel
 
+        # 获取模型能力列表
         model_ability = self._model_description.get("model_ability", [])
 
+        # 判断是否满足批处理条件：启用了Transformers批处理且模型是PytorchModel实例
         condition = XINFERENCE_TRANSFORMERS_ENABLE_BATCHING and isinstance(
             self._model, PytorchModel
         )
+        
+        # 如果满足批处理条件且模型具有视觉能力
         if condition and "vision" in model_ability:
+            # 检查模型名称或模型家族是否在允许批处理的视觉模型列表中
             if (
                 self._model.model_family.model_name
                 in XINFERENCE_BATCHING_ALLOWED_VISION_MODELS
@@ -341,12 +380,15 @@ class ModelActor(xo.StatelessActor):
             ):
                 return True
             else:
+                # 如果不在允许列表中，记录警告日志并返回False
                 logger.warning(
                     f"Currently for multimodal models, "
                     f"xinference only supports {', '.join(XINFERENCE_BATCHING_ALLOWED_VISION_MODELS)} for batching. "
                     f"Your model {self._model.model_family.model_name} with model family {self._model.model_family.model_family} is disqualified."
                 )
                 return False
+        
+        # 返回最终的批处理条件判断结果
         return condition
 
     async def load(self):

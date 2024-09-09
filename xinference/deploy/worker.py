@@ -107,6 +107,11 @@ def main(
     except KeyboardInterrupt:
         # 如果接收到键盘中断，取消任务
         task.cancel()
+        # 优雅关闭：当任务被取消后，loop.run_until_complete(task) 允许任务有机会执行清理操作
+        # 确保取消完成：task.cancel() 只是发送取消信号，但不会立即停止任务。
+        # loop.run_until_complete(task) 会等待任务真正结束
+        # 处理异常：如果任务在取消过程中抛出异常（除了 CancelledError），这个调用可以捕获并处理这些异常
+        # 状态同步：确保事件循环和任务状态保持一致，避免潜在的竞态条件。
         loop.run_until_complete(task)
         # 获取任务异常以避免显示未处理的异常警告
         task.exception()

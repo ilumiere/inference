@@ -35,6 +35,11 @@ logger = logging.getLogger(__name__)
 
 
 class LlamaCppModel(LLM):
+    """
+    LlamaCppModel 类，用于处理基于llama.cpp的模型加载和生成。
+    继承自LLM基类。
+    """
+
     def __init__(
         self,
         model_uid: str,
@@ -44,6 +49,16 @@ class LlamaCppModel(LLM):
         model_path: str,
         llamacpp_model_config: Optional[LlamaCppModelConfig] = None,
     ):
+        """
+        初始化LlamaCppModel实例。
+
+        :param model_uid: 模型的唯一标识符
+        :param model_family: 模型家族
+        :param model_spec: 模型规格
+        :param quantization: 量化方法
+        :param model_path: 模型路径
+        :param llamacpp_model_config: llama.cpp模型配置
+        """
         super().__init__(model_uid, model_family, model_spec, quantization, model_path)
 
         self._llamacpp_model_config: LlamaCppModelConfig = self._sanitize_model_config(
@@ -52,12 +67,23 @@ class LlamaCppModel(LLM):
         self._llm = None
 
     def _can_apply_cublas(self):
+        """
+        检查是否可以应用cuBLAS。
+
+        :return: 是否可以应用cuBLAS
+        """
         # TODO: figure out the quantizations supported.
         return True
 
     def _sanitize_model_config(
         self, llamacpp_model_config: Optional[LlamaCppModelConfig]
     ) -> LlamaCppModelConfig:
+        """
+        清理并补充llama.cpp模型配置。
+
+        :param llamacpp_model_config: 原始llama.cpp模型配置
+        :return: 清理后的llama.cpp模型配置
+        """
         if llamacpp_model_config is None:
             llamacpp_model_config = LlamaCppModelConfig()
 
@@ -83,6 +109,12 @@ class LlamaCppModel(LLM):
     def _sanitize_generate_config(
         self, generate_config: Optional[LlamaCppGenerateConfig]
     ) -> LlamaCppGenerateConfig:
+        """
+        清理并补充生成配置。
+
+        :param generate_config: 原始生成配置
+        :return: 清理后的生成配置
+        """
         if generate_config is None:
             generate_config = LlamaCppGenerateConfig(
                 **CreateCompletionLlamaCpp().dict()
@@ -104,6 +136,9 @@ class LlamaCppModel(LLM):
         return generate_config
 
     def load(self):
+        """
+        加载llama.cpp模型。
+        """
         try:
             import llama_cpp
             from llama_cpp import Llama
@@ -150,6 +185,14 @@ class LlamaCppModel(LLM):
     def match(
         cls, llm_family: LLMFamilyV1, llm_spec: LLMSpecV1, quantization: str
     ) -> bool:
+        """
+        检查给定的模型家族、规格和量化方法是否匹配LlamaCppModel。
+
+        :param llm_family: 模型家族
+        :param llm_spec: 模型规格
+        :param quantization: 量化方法
+        :return: 是否匹配
+        """
         if llm_spec.model_format not in ["ggufv2"]:
             return False
         if "qwen" in llm_family.model_name:
@@ -161,6 +204,13 @@ class LlamaCppModel(LLM):
     def generate(
         self, prompt: str, generate_config: Optional[LlamaCppGenerateConfig] = None
     ) -> Union[Completion, Iterator[CompletionChunk]]:
+        """
+        生成文本或文本流。
+
+        :param prompt: 输入提示
+        :param generate_config: 生成配置
+        :return: 生成的文本或文本流
+        """
         def generator_wrapper(
             _prompt: str,
             _generate_config: LlamaCppGenerateConfig,
@@ -230,6 +280,11 @@ class LlamaCppModel(LLM):
 
 
 class LlamaCppChatModel(LlamaCppModel, ChatModelMixin):
+    """
+    LlamaCppChatModel 类，用于处理基于llama.cpp的聊天模型。
+    继承自LlamaCppModel和ChatModelMixin。
+    """
+
     def __init__(
         self,
         model_uid: str,
@@ -239,6 +294,16 @@ class LlamaCppChatModel(LlamaCppModel, ChatModelMixin):
         model_path: str,
         llamacpp_model_config: Optional[LlamaCppModelConfig] = None,
     ):
+        """
+        初始化LlamaCppChatModel实例。
+
+        :param model_uid: 模型的唯一标识符
+        :param model_family: 模型家族
+        :param model_spec: 模型规格
+        :param quantization: 量化方法
+        :param model_path: 模型路径
+        :param llamacpp_model_config: llama.cpp模型配置
+        """
         super().__init__(
             model_uid,
             model_family,
@@ -252,6 +317,14 @@ class LlamaCppChatModel(LlamaCppModel, ChatModelMixin):
     def match(
         cls, llm_family: LLMFamilyV1, llm_spec: LLMSpecV1, quantization: str
     ) -> bool:
+        """
+        检查给定的模型家族、规格和量化方法是否匹配LlamaCppChatModel。
+
+        :param llm_family: 模型家族
+        :param llm_spec: 模型规格
+        :param quantization: 量化方法
+        :return: 是否匹配
+        """
         if llm_spec.model_format not in ["ggufv2"]:
             return False
         if "chat" not in llm_family.model_ability:
@@ -261,6 +334,12 @@ class LlamaCppChatModel(LlamaCppModel, ChatModelMixin):
     def _sanitize_generate_config(
         self, generate_config: Optional[LlamaCppGenerateConfig]
     ) -> LlamaCppGenerateConfig:
+        """
+        清理并补充生成配置，特别是针对聊天模型。
+
+        :param generate_config: 原始生成配置
+        :return: 清理后的生成配置
+        """
         generate_config = super()._sanitize_generate_config(generate_config)
         if self.model_family.prompt_style and self.model_family.prompt_style.stop:
             generate_config["stop"] = self.model_family.prompt_style.stop
@@ -273,6 +352,15 @@ class LlamaCppChatModel(LlamaCppModel, ChatModelMixin):
         chat_history: Optional[List[ChatCompletionMessage]] = None,
         generate_config: Optional[LlamaCppGenerateConfig] = None,
     ) -> Union[ChatCompletion, Iterator[ChatCompletionChunk]]:
+        """
+        进行聊天生成。
+
+        :param prompt: 输入提示
+        :param system_prompt: 系统提示
+        :param chat_history: 聊天历史
+        :param generate_config: 生成配置
+        :return: 聊天完成或聊天完成流
+        """
         assert self.model_family.prompt_style is not None
         prompt_style = self.model_family.prompt_style.copy()
         if system_prompt:

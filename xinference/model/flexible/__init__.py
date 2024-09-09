@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# 导入必要的模块
 import codecs
 import json
 import os
 
+# 导入常量和核心功能
 from ...constants import XINFERENCE_MODEL_DIR
 from .core import (
     FLEXIBLE_MODEL_DESCRIPTIONS,
@@ -28,13 +30,19 @@ from .core import (
     unregister_flexible_model,
 )
 
+# 设置灵活模型的目录路径
 model_dir = os.path.join(XINFERENCE_MODEL_DIR, "flexible")
 if os.path.isdir(model_dir):
+    # 遍历目录中的所有文件
     for f in os.listdir(model_dir):
+        # 使用 UTF-8 编码打开文件
         with codecs.open(os.path.join(model_dir, f), encoding="utf-8") as fd:
+            # 解析文件内容为 FlexibleModelSpec 对象
             model_spec = FlexibleModelSpec.parse_obj(json.load(fd))
+            # 注册灵活模型，但不持久化（因为已经存在文件）
             register_flexible_model(model_spec, persist=False)
 
-# register model description
+# 注册模型描述
 for model in get_flexible_models():
+    # 为每个模型生成描述并更新到 FLEXIBLE_MODEL_DESCRIPTIONS
     FLEXIBLE_MODEL_DESCRIPTIONS.update(generate_flexible_model_description(model))

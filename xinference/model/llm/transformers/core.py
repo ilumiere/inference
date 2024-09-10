@@ -81,18 +81,24 @@ class PytorchModel(LLM):
         pytorch_model_config: Optional[PytorchModelConfig] = None,
         peft_model: Optional[List[LoRA]] = None,
     ):
+        # 调用父类的初始化方法
         super().__init__(model_uid, model_family, model_spec, quantization, model_path)
+        # 设置是否使用快速分词器
         self._use_fast_tokenizer = True
+        # 对模型配置进行清理和验证
         self._pytorch_model_config: PytorchModelConfig = self._sanitize_model_config(
             pytorch_model_config
         )
+        # 存储PEFT模型
         self._peft_model = peft_model
 
     def _sanitize_model_config(
         self, pytorch_model_config: Optional[PytorchModelConfig]
     ) -> PytorchModelConfig:
+        # 如果没有提供配置，创建一个新的配置对象
         if pytorch_model_config is None:
             pytorch_model_config = PytorchModelConfig()
+        # 设置默认值
         pytorch_model_config.setdefault("revision", self.model_spec.model_revision)
         pytorch_model_config.setdefault("gptq_ckpt", None)
         pytorch_model_config.setdefault("gptq_wbits", 16)
@@ -108,6 +114,17 @@ class PytorchModel(LLM):
         self,
         generate_config: Optional[PytorchGenerateConfig],
     ) -> PytorchGenerateConfig:
+        # 如果没有提供生成配置，创建一个新的配置对象
+        # 默认值初始化：
+        # CreateCompletionTorch() 创建了一个包含所有默认值的实例。
+        # .dict() 将这个实例转换为字典，包含所有字段及其默认值。
+        # 配置转换：
+        # PytorchGenerateConfig(**...) 使用这个字典创建一个新的 PytorchGenerateConfig 对象。
+        # ** 操作符将字典展开为关键字参数。
+        # 3. 类型一致性：
+        # 确保 generate_config 是 PytorchGenerateConfig 类型，这可能是模型期望的配置类型。
+        # 灵活性：
+        # 允许 CreateCompletionTorch 和 PytorchGenerateConfig 独立演化，只要它们的字段名称保持兼容。
         if generate_config is None:
             generate_config = PytorchGenerateConfig(**CreateCompletionTorch().dict())
         else:
@@ -119,11 +136,13 @@ class PytorchModel(LLM):
         return generate_config
 
     def _check_tensorizer_integrity(self):
+        # 检查是否启用了tensorizer
         if not self._pytorch_model_config.get("enable_tensorizer"):
             return False
 
         from .tensorizer_utils import check_tensorizer_integrity
 
+        # 检查tensorizer文件的完整性
         integrity = check_tensorizer_integrity(
             self.model_path,
             [component[0] for component in self._get_components()],
@@ -132,25 +151,31 @@ class PytorchModel(LLM):
         return integrity
 
     def _load_tensorizer(self, **kwargs):
+        # 检查是否启用了tensorizer
         enable_tensorizer = self._pytorch_model_config.get("enable_tensorizer", None)
         if enable_tensorizer:
             from .tensorizer_utils import load_from_tensorizer
 
+            # 获取组件元数据
             component_metadata = [
                 (name, type, kwargs)
                 for name, _, type, kwargs in self._get_components(**kwargs)
             ]
+            # 从tensorizer加载模型和分词器
             model, tokenizer = load_from_tensorizer(
                 self.model_path, component_metadata, self._get_model_class(), **kwargs
             )
             return model, tokenizer
 
     def _save_tensorizer(self, **kwargs):
+        # 检查是否启用了tensorizer
         enable_tensorizer = self._pytorch_model_config.get("enable_tensorizer", None)
         if enable_tensorizer:
             from .tensorizer_utils import save_to_tensorizer
 
+            # 获取组件
             components = [(name, obj) for name, obj, _, _ in self._get_components()]
+            # 将模型保存为tensorizer格式
             save_to_tensorizer(self.model_path, self._model, components, **kwargs)
 
     def _get_model_class(self):
@@ -159,18 +184,42 @@ class PytorchModel(LLM):
         return AutoModelForCausalLM
 
     def _get_components(self, **kwargs):
+        # 导入AutoTokenizer类
+        """
+        kwargs = {
+         "trust_remote_code": False,
+         "revision": "main",
+         "code_revision": "v1.0"
+        }
+
+        result = self._get_components(**kwargs)
+        
+        解释：
+        返回值是一个列表，包含一个元组。
+        元组的四个元素分别是：
+        组件名称 ("tokenizer")
+        当前对象的tokenizer实例（如果存在）
+        使用的Tokenizer类 (AutoTokenizer)
+        配置字典
+        配置字典包含：
+
+        Returns:
+            _type_: _description_
+        """
         from transformers import AutoTokenizer
 
+        # 返回分词器组件的配置
         return [
             (
-                "tokenizer",
-                getattr(self, "_tokenizer", None),
-                AutoTokenizer,
+                "tokenizer",  # 组件名称
+                getattr(self, "_tokenizer", None),  # 获取当前对象的_tokenizer属性，如果不存在则返回None
+                AutoTokenizer,  # 使用的分词器类
                 {
-                    "use_fast": self._use_fast_tokenizer,
-                    "trust_remote_code": kwargs.get("trust_remote_code", True),
-                    "revision": kwargs.get("revision"),
-                    "code_revision": kwargs.get("code_revision", None),
+                    # 分词器的配置参数
+                    "use_fast": self._use_fast_tokenizer,  # 是否使用快速分词器
+                    "trust_remote_code": kwargs.get("trust_remote_code", True),  # 是否信任远程代码，默认为True
+                    "revision": kwargs.get("revision"),  # 模型的版本或分支
+                    "code_revision": kwargs.get("code_revision", None),  # 代码的版本或分支，默认为None
                 },
             )
         ]
@@ -186,12 +235,14 @@ class PytorchModel(LLM):
             ]
             raise ImportError(f"{error_message}\n\n{''.join(installation_guide)}")
 
+        # 加载分词器
         tokenizer = AutoTokenizer.from_pretrained(
             self.model_path,
             use_fast=self._use_fast_tokenizer,
             trust_remote_code=kwargs["trust_remote_code"],
             revision=kwargs["revision"],
         )
+        # 加载模型
         model = AutoModelForCausalLM.from_pretrained(
             self.model_path,
             low_cpu_mem_usage=True,
@@ -201,6 +252,7 @@ class PytorchModel(LLM):
         return model, tokenizer
 
     def _apply_lora(self):
+        # 如果有PEFT模型，应用LoRA
         if self._peft_model is not None:
             try:
                 from peft import PeftModel
@@ -211,12 +263,14 @@ class PytorchModel(LLM):
 
             for i, peft_model in enumerate(self._peft_model):
                 if i == 0:
+                    # 加载第一个PEFT模型
                     self._model = PeftModel.from_pretrained(
                         self._model,
                         peft_model.local_path,
                         adapter_name=peft_model.lora_name,
                     )
                 else:
+                    # 加载额外的PEFT模型
                     self._model.load_adapter(
                         peft_model.local_path, adapter_name=peft_model.lora_name
                     )
@@ -241,6 +295,7 @@ class PytorchModel(LLM):
 
         kwargs = {}
 
+        # 获取设备首选的数据类型
         dtype = get_device_preferred_dtype(self._device)
 
         if dtype is not None:
@@ -270,6 +325,7 @@ class PytorchModel(LLM):
             }
             kwargs["max_memory"] = max_memory
 
+        # 处理量化
         if quantization != "none" and model_format == "pytorch":
             if self._device == "cuda" and self._is_linux():
                 kwargs["device_map"] = "auto"
@@ -297,6 +353,7 @@ class PytorchModel(LLM):
                         f"Only 8-bit quantization is supported if it is not linux system or cuda device"
                     )
                 else:
+                    # 加载压缩模型
                     (
                         self._model,
                         self._tokenizer,
@@ -314,16 +371,19 @@ class PytorchModel(LLM):
             kwargs.update({"device_map": "auto"})
             is_device_map_auto = True
 
+        # 检查tensorizer完整性并加载模型
         if self._check_tensorizer_integrity():
             self._model, self._tokenizer = self._load_tensorizer(**kwargs)
         else:
             self._model, self._tokenizer = self._load_model(**kwargs)
 
+        # 应用LoRA
         self._apply_lora()
 
         if not is_device_map_auto:
             self._model.to(self._device)
 
+        # 保存为tensorizer格式
         self._save_tensorizer(**kwargs)
 
         logger.debug(f"Model Memory: {self._model.get_memory_footprint()}")
@@ -332,6 +392,7 @@ class PytorchModel(LLM):
     def match(
         cls, llm_family: "LLMFamilyV1", llm_spec: "LLMSpecV1", quantization: str
     ) -> bool:
+        # 检查模型是否匹配当前类
         if llm_spec.model_format not in ["pytorch", "gptq", "awq"]:
             return False
         model_family = llm_family.model_family or llm_family.model_name
@@ -364,11 +425,13 @@ class PytorchModel(LLM):
             "Enter generate, prompt: %s, generate config: %s", prompt, generate_config
         )
 
+        # 清理和验证生成配置
         generate_config = self._sanitize_generate_config(generate_config)
 
         assert self._model is not None
         assert self._tokenizer is not None
 
+        # 处理LoRA模型
         lora_model = generate_config.pop("lora_name")
 
         if lora_model is not None and self._peft_model is not None:
@@ -381,6 +444,7 @@ class PytorchModel(LLM):
                 self._model.disable_adapter()
                 logger.info(f"No lora model {lora_model} found, skip setting")
 
+        # 生成文本
         stream = generate_config.get("stream", False)
         if not stream:
             for completion_chunk, completion_usage in generate_stream(
@@ -408,9 +472,9 @@ class PytorchModel(LLM):
         self, batch_size: int, seq_length: int, reqs: List[InferenceRequest]
     ):
         """
-        Build attention mask for prefill phase.
-        Padding `0` on the left.
-        Note that the parameter `seq_length` is from `input_ids`.
+        构建预填充阶段的注意力掩码。
+        在左侧填充 `0`。
+        注意参数 `seq_length` 来自 `input_ids`。
         """
         data = []
         for r in reqs:
@@ -429,22 +493,26 @@ class PytorchModel(LLM):
         self, batch_size: int, seq_length: int, reqs: List[InferenceRequest]
     ):
         """
-        Build attention mask for decode phase.
-        Note that the `seq_length` parameter is from merged kv_cache.
-        So we need pad `0` on the left again.
+        为解码阶段构建注意力掩码。
+        注意参数 `seq_length` 来自合并的 kv_cache。
+        因此我们需要再次在左侧填充 `0`。
         """
         data = []
         for r in reqs:
+            # 增加注意力掩码序列长度
             r.extra_kwargs["attention_mask_seq_len"] += 1
             attention_mask_seq_len = r.extra_kwargs["attention_mask_seq_len"]
+            # 计算需要填充的长度
             pad_len = seq_length - attention_mask_seq_len
+            # 构建注意力掩码
             x = torch.cat(
                 [
-                    torch.full((pad_len,), 0, dtype=torch.long),
-                    torch.ones((attention_mask_seq_len,), dtype=torch.long),
+                    torch.full((pad_len,), 0, dtype=torch.long),  # 左侧填充0
+                    torch.ones((attention_mask_seq_len,), dtype=torch.long),  # 右侧填充1
                 ]
             )
             data.append(x)
+        # 将所有注意力掩码堆叠并移动到指定设备
         return torch.stack(data).to(self._device)
 
     def build_prefill_position_ids(
@@ -462,11 +530,12 @@ class PytorchModel(LLM):
             res.append(
                 torch.cat(
                     [
-                        torch.full((r.padding_len,), 0, dtype=torch.long),
-                        torch.arange(0, real_seq_len, dtype=torch.long),
+                        torch.full((r.padding_len,), 0, dtype=torch.long),  # 左侧填充0
+                        torch.arange(0, real_seq_len, dtype=torch.long),  # 生成位置ID序列
                     ]
                 )
             )
+            # 记录最大位置ID
             r.extra_kwargs["max_position_id"] = real_seq_len - 1
         return torch.stack(res).to(self._device)
 
@@ -479,6 +548,7 @@ class PytorchModel(LLM):
         """
         data = []
         for r in reqs:
+            # 增加最大位置ID
             r.extra_kwargs["max_position_id"] += 1
             data.append([r.extra_kwargs["max_position_id"]])
         position_ids = torch.as_tensor(data, dtype=torch.long, device=self._device)
@@ -488,8 +558,8 @@ class PytorchModel(LLM):
         self, batch_size: int, seq_length: int, reqs: List[InferenceRequest]
     ):
         """
-        Build token_type_ids for prefill phase.
-        For most models, this is not required.
+        为预填充阶段构建token_type_ids。
+        对于大多数模型，这不是必需的。
         """
         return None
 
@@ -497,18 +567,20 @@ class PytorchModel(LLM):
         self, batch_size: int, seq_length: int, reqs: List[InferenceRequest]
     ):
         """
-        Build token_type_ids for decode phase.
-        For most models, this is not required.
+        为解码阶段构建token_type_ids。
+        对于大多数模型，这不是必需的。
         """
         return None
 
     def build_prefill_inputs(self, prompts: List, req_list: List[InferenceRequest]):
         """
-        Get inputs for inference. Models may have their own impl.
+        获取推理的输入。不同模型可能有自己的实现。
         """
         assert isinstance(prompts[0], str)
+        # 对提示进行分词
         inputs = self._tokenizer(prompts, padding=False).input_ids
         context_len = self.get_context_len()
+        # 对输入进行填充并转移到指定设备
         input_ids = torch.as_tensor(
             pad_prefill_tokens(inputs, context_len, req_list), device=self._device
         )
@@ -516,19 +588,22 @@ class PytorchModel(LLM):
 
     def build_prefill_kwargs(self, prompts: List, req_list: List[InferenceRequest]):
         """
-        Get all inputs parameters for prefill phase. Models may have their own impl.
+        获取预填充阶段的所有输入参数。不同模型可能有自己的实现。
         """
         input_ids = self.build_prefill_inputs(prompts, req_list)
         res = {"input_ids": input_ids}
         batch_size, seq_len = input_ids.shape
+        # 构建注意力掩码
         attention_mask = self.build_prefill_attention_mask(
             batch_size, seq_len, req_list
         )
         if attention_mask is not None:
             res["attention_mask"] = attention_mask
+        # 构建位置ID
         position_ids = self.build_prefill_position_ids(batch_size, seq_len, req_list)
         if position_ids is not None:
             res["position_ids"] = position_ids
+        # 构建token类型ID
         token_type_ids = self.build_prefill_token_type_ids(
             batch_size, seq_len, req_list
         )
@@ -544,15 +619,18 @@ class PytorchModel(LLM):
         seq_len: int,
     ):
         """
-        Get all inputs parameters for decode phase. Models may have their own impl.
+        获取解码阶段的所有输入参数。不同模型可能有自己的实现。
         """
         res = {"input_ids": torch.as_tensor(prompts, device=self._device)}
+        # 构建注意力掩码
         attention_mask = self.build_decode_attention_mask(batch_size, seq_len, req_list)
         if attention_mask is not None:
             res["attention_mask"] = attention_mask
+        # 构建位置ID
         position_ids = self.build_decode_position_ids(batch_size, seq_len, req_list)
         if position_ids is not None:
             res["position_ids"] = position_ids
+        # 构建token类型ID
         token_type_ids = self.build_decode_token_type_ids(batch_size, seq_len, req_list)
         if token_type_ids is not None:
             res["token_type_ids"] = token_type_ids
@@ -561,14 +639,14 @@ class PytorchModel(LLM):
     @staticmethod
     def get_batch_size_and_seq_len_indexes_from_kv() -> Tuple[int, int]:
         """
-        From huggingface transformers document, the `pask_key_values` has the shape of
-        `(batch_size, num_heads, sequence_length, embed_size_per_head)`.
-        However, for some models, the shape may be changed.
+        从huggingface transformers文档中，`pask_key_values` 的形状为
+        `(batch_size, num_heads, sequence_length, embed_size_per_head)`。
+        然而，对于某些模型，形状可能会改变。
         """
         return 0, 2
 
     def get_dtype(self):
-        raise NotImplementedError("Not implemented.")
+        raise NotImplementedError("未实现。")
 
     @lru_cache
     def get_context_len(self):
@@ -581,7 +659,7 @@ class PytorchModel(LLM):
         return self._sanitize_generate_config(req.generate_config)
 
     def prepare_batch_inference(self, req_list: List[InferenceRequest]):
-        # check some parameters
+        # 检查一些参数
         for r in req_list:
             try:
                 if r.sanitized_generate_config is None:
@@ -589,15 +667,15 @@ class PytorchModel(LLM):
                         r
                     )
                 if r.is_prefill:
-                    # check some generate params
+                    # 检查一些生成参数
                     max_src_len = get_max_src_len(self.get_context_len(), r)  # type: ignore
                     if max_src_len < 0:
                         r.stopped = True
-                        r.error_msg = "Max tokens exceeds model's max length"
+                        r.error_msg = "最大token数超过模型的最大长度"
                         continue
                     if r.stream_interval <= 0:
                         r.stopped = True
-                        r.error_msg = "`stream_interval` must be greater than 0"
+                        r.error_msg = "`stream_interval` 必须大于0"
                         continue
                     stop_str = r.sanitized_generate_config.get("stop", None)
                     if stop_str and (
@@ -606,11 +684,11 @@ class PytorchModel(LLM):
                         )
                     ):
                         r.stopped = True
-                        r.error_msg = "Invalid `stop` field type"
+                        r.error_msg = "无效的 `stop` 字段类型"
                         continue
-            # Catch exception here. If not catch exception, the request would hang.
+            # 在这里捕获异常。如果不捕获异常，请求将会挂起。
             except Exception as e:
-                logger.exception(f"prepare inference error with {e}")
+                logger.exception(f"准备推理时出错：{e}")
                 r.stopped = True
                 r.error_msg = str(e)
 
@@ -625,7 +703,7 @@ class PytorchModel(LLM):
     def handle_batch_inference_results(self, req_list: List[InferenceRequest]):
         for req in req_list:
             if req.error_msg is None:
-                # nothing need handle for non-stream case
+                # 非流式情况下不需要处理
                 if req.stream:
                     results = []
                     for i, c in enumerate(req.completion):

@@ -39,7 +39,11 @@ __all__ = [
 
 
 def _filter_kwargs(kwargs):
+    # 设置 trust_remote_code 的默认值为 True
     kwargs["trust_remote_code"] = kwargs.get("trust_remote_code", True)
+    
+    # 返回一个新的字典，只包含 "code_revision" 或 "trust_remote_code" 这两个键值对
+    # 如果原字典中存在这些键的话
     return {
         k: v for k, v in kwargs.items() if k in ["code_revision", "trust_remote_code"]
     }
@@ -48,14 +52,50 @@ def _filter_kwargs(kwargs):
 def _file_is_non_empty(
     path: str,
 ) -> bool:
+    """
+    检查指定路径的文件是否非空
+
+    Args:
+        path (str): 要检查的文件路径
+
+    Returns:
+        bool: 如果文件存在且非空返回True，否则返回False
+    """
     try:
+        # 使用os.stat()获取文件状态，并检查文件大小是否大于0
         return os.stat(path).st_size > 0
     except FileNotFoundError:
+        # 如果文件不存在，返回False
         return False
 
 
 def get_tensorizer_dir(model_path: str) -> str:
+    """
+    路径。让我给你一些具体的输入和输出例子：
+    假设 XINFERENCE_TENSORIZER_DIR 的值是 "/home/user/xinference/tensorizer"
+
+    输入:
+    model_path = "/models/gpt2"
+
+    输出: 
+    "/home/user/xinference/tensorizer/gpt2"
+
+    输入:
+    model_path = "/path/to/models/bert-base-uncased/"
+
+    输出:
+    "/home/user/xinference/tensorizer/bert-base-uncased"
+
+    Args:
+        model_path (str): _description_
+
+    Returns:
+        str: _description_
+    """
+    # 获取模型路径的基本名称，去除末尾的斜杠
     model_dir = os.path.basename(model_path.rstrip("/"))
+    # 返回tensorizer目录的完整路径
+    # 使用XINFERENCE_TENSORIZER_DIR作为基础目录，并将model_dir添加到路径中
     return f"{XINFERENCE_TENSORIZER_DIR}/{model_dir}"
 
 
@@ -64,15 +104,59 @@ def check_tensorizer_integrity(
     components: Optional[List[str]] = None,
     model_prefix: Optional[str] = "model",
 ) -> bool:
+    """
+    
+    Tensorizer的作用：
+    Tensorizer是一种用于优化深度学习模型存储和加载的技术。
+    它将模型参数（张量）序列化为一种高效的格式。
+    主要目的是加快模型的加载速度，减少内存使用
+
+    Args:
+        model_path (str): _description_
+        components (Optional[List[str]], optional): _description_. Defaults to None.
+        model_prefix (Optional[str], optional): _description_. Defaults to "model".
+
+    Returns:
+        bool: _description_
+    """
+    # 获取tensorizer目录路径
     tensorizer_dir = get_tensorizer_dir(model_path)
+    # 去除路径末尾的斜杠
     dir = tensorizer_dir.rstrip("/")
+    # 构造模型张量文件的URI
     tensors_uri: str = f"{dir}/{model_prefix}.tensors"
     # iterate over components and get their paths
     paths = [tensors_uri]
+    # 如果提供了组件列表
+    # components 的内容：
+    # 每个组件通常是一个字符串，代表组件的名称或标识符。
+    # 这些可能包括但不限于：
+    # 分词器（tokenizer）
+
+    # 配置文件
+    # 特定的模型层或子模块
+    # 预处理或后处理组件
+    # 组件文件的构造：
+
+    # 对于每个组件，函数构造一个 ZIP 文件的 URI：
+    # f"{tensorizer_dir.rstrip('/')}/{component}.zip"
+    # 这表明每个组件都被期望以 ZIP 文件的形式存储。
+
+    # 示例：
+
+    # 假设 components = ["tokenizer", "config"]，那么函数会检查以下文件：
+    # {tensorizer_dir}/model.tensors（主模型文件）
+    # {tensorizer_dir}/tokenizer.zip
+    # {tensorizer_dir}/config.zip
+    
     if components is not None:
+        # 遍历组件列表
         for component in components:
+            # 构造每个组件的ZIP文件URI
             component_uri: str = f"{tensorizer_dir.rstrip('/')}/{component}.zip"
+            # 将组件URI添加到路径列表
             paths.append(component_uri)
+    # 检查所有路径对应的文件是否非空，返回结果
     return all(_file_is_non_empty(path) for path in paths)
 
 

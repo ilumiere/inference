@@ -1347,32 +1347,47 @@ class SupervisorActor(xo.StatelessActor):
 
     @log_async(logger=logger)
     async def add_worker(self, worker_address: str):
+        # 从worker模块导入WorkerActor类
         from .worker import WorkerActor
 
+        # 断言检查：确保worker_address不在已存在的worker列表中
         assert (
             worker_address not in self._worker_address_to_worker
         ), f"Worker {worker_address} exists"
 
+        # 创建一个指向新worker的actor引用
         worker_ref = await xo.actor_ref(address=worker_address, uid=WorkerActor.uid())
+        
+        # 将新worker添加到worker字典中
         self._worker_address_to_worker[worker_address] = worker_ref
+        
+        # 记录成功添加worker的日志
         logger.debug("Worker %s has been added successfully", worker_address)
 
     @log_async(logger=logger)
     async def remove_worker(self, worker_address: str):
+        # 初始化一个列表，用于存储需要移除的模型 UID
         uids_to_remove = []
+        
+        # 遍历所有模型 UID，找出与要移除的 worker 相关的模型
         for model_uid in self._replica_model_uid_to_worker:
             if self._replica_model_uid_to_worker[model_uid].address == worker_address:
                 uids_to_remove.append(model_uid)
 
+        # 移除与该 worker 相关的所有模型信息
         for replica_model_uid in uids_to_remove:
             model_uid, _, _ = parse_replica_model_uid(replica_model_uid)
+            # 从副本信息字典中移除模型信息
             self._model_uid_to_replica_info.pop(model_uid, None)
+            # 从副本模型到 worker 的映射中移除信息
             self._replica_model_uid_to_worker.pop(replica_model_uid, None)
 
+        # 如果 worker 地址存在于 worker 字典中，则移除它
         if worker_address in self._worker_address_to_worker:
             del self._worker_address_to_worker[worker_address]
             logger.debug("Worker %s has been removed successfully", worker_address)
         else:
+            # 如果 worker 不在字典中，记录警告日志
             logger.warning(
                 f"Worker {worker_address} cannot be removed since it is not registered to supervisor."
             )
@@ -1380,24 +1395,30 @@ class SupervisorActor(xo.StatelessActor):
     async def report_worker_status(
         self, worker_address: str, status: Dict[str, Union[ResourceStatus, GPUStatus]]
     ):
+        # 检查worker_address是否已存在于_worker_status字典中
         if worker_address not in self._worker_status:
+            # 如果不存在，记录日志并创建新的WorkerStatus对象
             logger.debug("Worker %s resources: %s", worker_address, status)
             self._worker_status[worker_address] = WorkerStatus(
-                update_time=time.time(),
-                failure_remaining_count=XINFERENCE_HEALTH_CHECK_FAILURE_THRESHOLD,
-                status=status,
+                update_time=time.time(),  # 设置更新时间为当前时间
+                failure_remaining_count=XINFERENCE_HEALTH_CHECK_FAILURE_THRESHOLD,  # 设置剩余失败次数
+                status=status,  # 设置worker状态
             )
         else:
+            # 如果worker_address已存在，更新其状态
             worker_status = self._worker_status[worker_address]
-            worker_status.update_time = time.time()
-            worker_status.status = status
+            worker_status.update_time = time.time()  # 更新最后更新时间
+            worker_status.status = status  # 更新worker状态
 
     async def list_deletable_models(
         self, model_version: str, worker_ip: Optional[str] = None
     ) -> List[str]:
+        # 获取指定IP的worker引用，如果未指定IP则为None
         target_ip_worker_ref = (
             self._get_worker_ref_by_ip(worker_ip) if worker_ip is not None else None
         )
+        
+        # 检查指定的worker IP是否有效
         if (
             worker_ip is not None
             and not self.is_local_deployment()
@@ -1406,14 +1427,19 @@ class SupervisorActor(xo.StatelessActor):
             raise ValueError(f"Worker ip address {worker_ip} is not in the cluster.")
 
         ret = []
+        # 如果指定了特定的worker
         if target_ip_worker_ref:
+            # 从指定的worker获取可删除的模型列表
             ret = await target_ip_worker_ref.list_deletable_models(
                 model_version=model_version,
             )
             return ret
 
+        # 如果未指定特定worker，则遍历所有worker
         for worker in self._worker_address_to_worker.values():
+            # 从每个worker获取可删除的模型路径
             path = await worker.list_deletable_models(model_version=model_version)
+            # 将获取的路径添加到结果列表中
             ret.extend(path)
         return ret
 

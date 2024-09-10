@@ -497,6 +497,8 @@ class ModelAndPrompt(BaseModel):
     prompt: str  # 提示文本
 
 
+# 当 echo 设置为 True 时，模型的输出会包含原始的输入文本，然后再跟上生成的新文本。
+# 当 echo 设置为 False 时，输出中只包含新生成的文本，不包括原始输入。
 class CreateCompletionTorch(BaseModel):
     echo: bool = echo_field  # 是否回显输入
     max_tokens: Optional[int] = max_tokens_field  # 生成的最大token数

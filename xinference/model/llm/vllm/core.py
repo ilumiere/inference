@@ -196,19 +196,32 @@ class VLLMModel(LLM):
         :param peft_model: PEFT模型列表
         """
         try:
+            # 尝试导入LoRARequest类
             from vllm.lora.request import LoRARequest
         except ImportError:
+            # 如果导入失败，准备错误信息和安装指南
             error_message = "Failed to import module 'vllm'"
             installation_guide = [
                 "Please make sure 'vllm' is installed. ",
                 "You can install it by `pip install vllm`\n",
             ]
 
+            # 抛出ImportError异常，包含错误信息和安装指南
             raise ImportError(f"{error_message}\n\n{''.join(installation_guide)}")
+        
+        # 调用父类的初始化方法
         super().__init__(model_uid, model_family, model_spec, quantization, model_path)
+        
+        # 初始化模型配置
         self._model_config = model_config
+        # 初始化引擎为None
         self._engine = None
+        # 存储PEFT模型
+        # PEFT（Parameter-Efficient Fine-Tuning）：
+        # 这是一种在大型预训练模型上进行微调的技术，它只更新模型的一小部分参数，而不是全部参数。
+        # 这种方法可以显著减少计算资源的需求，同时保持良好的性能。
         self.lora_modules = peft_model
+        # 初始化LoRA请求列表
         self.lora_requests: List[LoRARequest] = []
 
     def load(self):
@@ -236,12 +249,14 @@ class VLLMModel(LLM):
             # besides, xinference set start method as forkserver for unix
             # we need to set it to fork to make cupy NCCL work
             multiprocessing.set_start_method("fork", force=True)
-
+        
+        # 清理并补充模型配置
         self._model_config = self._sanitize_model_config(self._model_config)
 
         if self.lora_modules is None:
             self.lora_requests = []
         else:
+            # 创建LoRA请求列表
             self.lora_requests = [
                 LoRARequest(
                     lora_name=lora.lora_name,
@@ -251,22 +266,28 @@ class VLLMModel(LLM):
                 for i, lora in enumerate(self.lora_modules, start=1)
             ]
 
+        # 检查是否启用LoRA
         enable_lora = len(self.lora_requests) > 0
+        # 设置LoRA的最大数量
         max_loras = len(self.lora_requests)
 
+        # 记录加载模型时的配置信息
         logger.info(
             f"Loading {self.model_uid} with following model config: {self._model_config}"
             f"Enable lora: {enable_lora}. Lora count: {max_loras}."
         )
 
+        # 创建AsyncEngineArgs实例
         engine_args = AsyncEngineArgs(
             model=self.model_path,
             enable_lora=enable_lora,
             max_loras=max_loras,
             **self._model_config,
         )
+        # 从引擎参数创建AsyncLLMEngine实例
         self._engine = AsyncLLMEngine.from_engine_args(engine_args)
 
+        # 创建健康检查任务
         self._check_health_task = None
         if hasattr(self._engine, "check_health"):
             # vLLM introduced `check_health` since v0.4.1
@@ -310,7 +331,6 @@ class VLLMModel(LLM):
                 os._exit(1)
             else:
                 await asyncio.sleep(interval)
-
     def _sanitize_model_config(
         self, model_config: Optional[VLLMModelConfig]
     ) -> VLLMModelConfig:
@@ -320,22 +340,25 @@ class VLLMModel(LLM):
         :param model_config: 原始模型配置
         :return: 清理后的模型配置
         """
+        # 如果没有提供模型配置，创建一个新的VLLMModelConfig实例
         if model_config is None:
             model_config = VLLMModelConfig()
 
+        # 获取可用的CUDA设备数量
         cuda_count = self._get_cuda_count()
 
-        model_config.setdefault("tokenizer_mode", "auto")
-        model_config.setdefault("trust_remote_code", True)
-        model_config.setdefault("tensor_parallel_size", cuda_count)
-        model_config.setdefault("block_size", 16)
-        model_config.setdefault("swap_space", 4)
-        model_config.setdefault("gpu_memory_utilization", 0.90)
-        model_config.setdefault("max_num_seqs", 256)
-        model_config.setdefault("quantization", None)
-        model_config.setdefault("max_model_len", 4096)
+        # 设置默认的模型配置参数
+        model_config.setdefault("tokenizer_mode", "auto")  # 设置分词器模式为自动
+        model_config.setdefault("trust_remote_code", True)  # 信任远程代码
+        model_config.setdefault("tensor_parallel_size", cuda_count)  # 设置张量并行大小为CUDA设备数量
+        model_config.setdefault("block_size", 16)  # 设置块大小
+        model_config.setdefault("swap_space", 4)  # 设置交换空间大小
+        model_config.setdefault("gpu_memory_utilization", 0.90)  # 设置GPU内存利用率
+        model_config.setdefault("max_num_seqs", 256)  # 设置最大序列数
+        model_config.setdefault("quantization", None)  # 设置量化方法为None
+        model_config.setdefault("max_model_len", 4096)  # 设置最大模型长度
 
-        return model_config
+        return model_config  # 返回清理后的模型配置
 
     @staticmethod
     def _sanitize_generate_config(
@@ -345,6 +368,26 @@ class VLLMModel(LLM):
         清理并补充生成配置。
 
         :param generate_config: 原始生成配置
+
+        
+        安全性：防止使用未定义或不安全的配置值。
+        默认值：为未指定的参数提供合理的默认值。
+        标准化：确保所有后续处理都使用统一格式的配置。
+        使用示例：
+        original_config = {
+            "temperature": 0.7,
+            "max_tokens": 100
+        }
+
+        sanitized_config = VLLMModel._sanitize_generate_config(original_config)
+
+        # sanitized_config 现在包含所有必要的参数，
+        # 包括原始配置中的值和其他参数的默认值
+
+        总之，_sanitize_generate_config 方法是一个重要的预处理步骤
+        它确保了生成过程使用的配置是完整、一致和安全的。
+        这种方法有助于提高代码的健壮性和可靠性，特别是在处理用户输入或外部配置
+        
         :return: 清理后的生成配置
         """
         if not generate_config:

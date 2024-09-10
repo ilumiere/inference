@@ -136,7 +136,7 @@ class LLM(abc.ABC):
         # 获取环境变量CUDA_VISIBLE_DEVICES的值
         cuda_visible_devices = os.getenv("CUDA_VISIBLE_DEVICES", None)
         
-        # 如果CUDA_VISIBLE_DEVICES未设置
+        # 如果CUDA_VISIBLE_DEVICES未设置，获取设置的全部CUDA设备数量
         if cuda_visible_devices is None:
             # 直接返回cuda_count()的结果
             return cuda_count()

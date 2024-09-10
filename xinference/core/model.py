@@ -354,6 +354,7 @@ class ModelActor(xo.StatelessActor):
 
     def is_vllm_backend(self) -> bool:
         # 检查是否使用VLLM后端
+        # 是VLLMModel模型实例就使用vllm后端
         from ..model.llm.vllm.core import VLLMModel
 
         return isinstance(self._model, VLLMModel)

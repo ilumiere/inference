@@ -903,19 +903,26 @@ def get_model_version(
 
 
 def _decode_image(_url):
+    # 解码图像URL或base64编码的图像数据
     if _url.startswith("data:"):
         logging.info("Parse url by base64 decoder.")
         # https://platform.openai.com/docs/guides/vision/uploading-base-64-encoded-images
         # e.g. f"data:image/jpeg;base64,{base64_image}"
         _type, data = _url.split(";")
         _, ext = _type.split("/")
+        # 移除base64前缀
         data = data[len("base64,") :]
+        # 解码base64数据
         data = base64.b64decode(data.encode("utf-8"))
+        # 打开并转换图像为RGB格式
         return Image.open(BytesIO(data)).convert("RGB")
     else:
         try:
+            # 尝试从URL下载图像
             response = requests.get(_url)
         except requests.exceptions.MissingSchema:
+            # 如果URL不合法，尝试直接打开本地文件
             return Image.open(_url).convert("RGB")
         else:
+            # 从下载的内容中打开图像并转换为RGB格式
             return Image.open(BytesIO(response.content)).convert("RGB")

@@ -68,7 +68,34 @@ class ChatModelMixin:
         tools: Optional[List[Dict]] = None,
     ):
         """
-        受FastChat启发。根据不同模型的提示风格将聊天历史格式化为提示。
+        根据不同模型的提示风格将聊天历史格式化为提示。
+
+        此函数受FastChat启发，用于处理和格式化聊天历史，生成适合特定模型的提示。
+
+        参数:
+        prompt (str): 当前用户输入的提示。
+        chat_history (List[ChatCompletionMessage]): 聊天历史记录列表。
+        prompt_style (PromptStyleV1): 定义了特定模型的提示风格。
+        tools (Optional[List[Dict]]): 可选的工具列表，用于某些模型的特殊处理。
+
+        返回:
+        str 或 Tuple[str, List]: 格式化后的提示字符串，或者对于某些特殊模型，返回提示字符串和图像列表的元组。
+
+        函数流程:
+        1. 确保prompt_style.roles不为None。
+        2. 如果prompt不是特殊工具提示，将其添加到聊天历史中。
+        3. 在聊天历史中添加一个空的助手消息。
+        4. 定义get_role函数来获取角色名称。
+        5. 根据不同的prompt_style.style_name处理聊天历史：
+           - 每种风格都有特定的格式化逻辑
+           - 处理系统提示、用户消息、助手消息等
+           - 某些风格还包括工具调用的特殊处理
+        6. 返回格式化后的提示字符串。
+
+        注意:
+        - 函数包含多个条件分支，每个分支对应不同的提示风格。
+        - 某些风格（如INTERNVL）可能返回额外的图像信息。
+        - 函数处理各种特殊情况，如工具调用、系统提示等。
         """
         # 确保prompt_style.roles不为None
         assert prompt_style.roles is not None
@@ -513,74 +540,138 @@ Begin!"""
 
     @classmethod
     def _to_chat_completion_chunk(cls, chunk: CompletionChunk) -> ChatCompletionChunk:
+        """
+        将CompletionChunk转换为ChatCompletionChunk格式。
+
+        此类方法用于处理和转换完成块（CompletionChunk）为聊天完成块（ChatCompletionChunk）格式。
+        它处理两种情况：已经是ChatCompletionChunk格式的块和需要转换的CompletionChunk。
+
+        参数:
+        cls (type): 类本身，用于访问类方法。
+        chunk (CompletionChunk): 需要转换的完成块。
+
+        返回:
+        ChatCompletionChunk: 转换后的聊天完成块。
+
+        方法流程:
+        1. 检查输入块是否已经是ChatCompletionChunk格式。
+        2. 如果是，直接返回输入块。
+        3. 如果不是，创建新的聊天完成块结构。
+        4. 转换每个选择（choice）的内容，包括处理可能的工具调用。
+        5. 返回转换后的ChatCompletionChunk。
+        """
         choices = chunk.get("choices")
+        # 检查是否已经是ChatCompletionChunk格式
         if (
             chunk.get("object") == "chat.completion.chunk"
             and choices
             and "delta" in choices[0]
         ):
-            # Already a ChatCompletionChunk, we don't need to convert chunk.
+            # 如果已经是ChatCompletionChunk，直接返回
             return cast(ChatCompletionChunk, chunk)
+        
+        # 创建新的聊天完成块结构
         chat_chunk = {
-            "id": "chat" + chunk["id"],
-            "model": chunk["model"],
-            "created": chunk["created"],
-            "object": "chat.completion.chunk",
+            "id": "chat" + chunk["id"],  # 添加"chat"前缀到ID
+            "model": chunk["model"],     # 复制模型信息
+            "created": chunk["created"], # 复制创建时间戳
+            "object": "chat.completion.chunk",  # 设置对象类型
             "choices": [
                 {
-                    "index": i,
+                    "index": i,  # 设置选择的索引
                     "delta": {
-                        "content": choice.get("text"),
+                        "content": choice.get("text"),  # 获取文本内容
+                        # 如果存在工具调用，添加到delta中
                         **(
                             {"tool_calls": choice["tool_calls"]}
                             if "tool_calls" in choice
                             else {}
                         ),
                     },
-                    "finish_reason": choice["finish_reason"],
+                    "finish_reason": choice["finish_reason"],  # 设置完成原因
                 }
                 for i, choice in enumerate(chunk["choices"])
             ],
         }
+        # 将结果转换为ChatCompletionChunk类型并返回
         return cast(ChatCompletionChunk, chat_chunk)
 
     @classmethod
     def _get_first_chat_completion_chunk(
         cls, chunk: CompletionChunk
     ) -> ChatCompletionChunk:
+        """
+        生成第一个聊天完成块。
+
+        此类方法用于处理流式响应的第一个块，将其转换为聊天完成格式。
+
+        参数:
+        cls (type): 类本身，用于访问类方法。
+        chunk (CompletionChunk): 输入的完成块，通常是流式响应的第一个块。
+
+        返回:
+        ChatCompletionChunk: 转换后的聊天完成块。
+
+        方法流程:
+        1. 创建基本的聊天完成块结构。
+        2. 为每个选择创建初始delta信息。
+        3. 将结果转换为ChatCompletionChunk类型并返回。
+        """
         chat_chunk = {
-            "id": "chat" + chunk["id"],
-            "model": chunk["model"],
-            "created": chunk["created"],
-            "object": "chat.completion.chunk",
+            "id": "chat" + chunk["id"],  # 添加"chat"前缀到ID
+            "model": chunk["model"],     # 复制模型信息
+            "created": chunk["created"], # 复制创建时间戳
+            "object": "chat.completion.chunk",  # 设置对象类型
             "choices": [
                 {
-                    "index": i,
+                    "index": i,  # 设置选择的索引
                     "delta": {
-                        "role": "assistant",
-                        "content": "",
+                        "role": "assistant",  # 设置角色为助手
+                        "content": "",        # 初始内容为空字符串
                     },
-                    "finish_reason": None,
+                    "finish_reason": None,  # 初始完成原因为None
                 }
                 for i, choice in enumerate(chunk["choices"])
             ],
         }
-        return cast(ChatCompletionChunk, chat_chunk)
+        return cast(ChatCompletionChunk, chat_chunk)  # 将结果转换为ChatCompletionChunk类型并返回
 
     @classmethod
     def _get_final_chat_completion_chunk(
         cls, chunk: CompletionChunk
     ) -> ChatCompletionChunk:
+        """
+        生成最终的聊天完成块。
+
+        此类方法用于处理流式响应的最后一个块，将其转换为聊天完成格式。
+
+        参数:
+        cls (type): 类本身，用于访问类方法。
+        chunk (CompletionChunk): 输入的完成块，通常是流式响应的最后一个块。
+
+        返回:
+        ChatCompletionChunk: 转换后的聊天完成块。
+
+        方法流程:
+        1. 创建基本的聊天完成块结构。
+        2. 添加使用情况信息（如果有）。
+        3. 将结果转换为ChatCompletionChunk类型并返回。
+        """
+        # 创建基本的聊天完成块结构
         chat_chunk = {
-            "id": "chat" + chunk["id"],
-            "model": chunk["model"],
-            "created": chunk["created"],
-            "object": "chat.completion.chunk",
-            "choices": [],
+            "id": "chat" + chunk["id"],  # 添加"chat"前缀到ID
+            "model": chunk["model"],     # 复制模型信息
+            "created": chunk["created"], # 复制创建时间戳
+            "object": "chat.completion.chunk",  # 设置对象类型
+            "choices": [],  # 最终块通常没有选择，因此为空列表
         }
+        
+        # 获取使用情况信息（如果有）
         usage = chunk.get("usage")
         if usage is not None:
-            chat_chunk["usage"] = usage
+            chat_chunk["usage"] = usage  # 添加使用情况信息到聊天块
+        
+        # 将结果转换为ChatCompletionChunk类型并返回
         return cast(ChatCompletionChunk, chat_chunk)
 
     @classmethod
@@ -589,14 +680,36 @@ Begin!"""
         cls,
         chunks: Iterator[CompletionChunk],
     ) -> Iterator[ChatCompletionChunk]:
+        """
+        将CompletionChunk迭代器转换为ChatCompletionChunk迭代器。
+
+        此类方法用于处理流式响应，将标准完成格式的chunks转换为聊天完成格式。
+        它使用了@ensure_cache_cleared装饰器来确保在执行过程中清除缓存。
+
+        参数:
+        cls (type): 类本身，用于访问类方法。
+        chunks (Iterator[CompletionChunk]): 输入的CompletionChunk迭代器。
+
+        返回:
+        Iterator[ChatCompletionChunk]: 转换后的ChatCompletionChunk迭代器。
+
+        方法流程:
+        1. 遍历输入的chunks迭代器。
+        2. 对每个chunk进行处理和转换。
+        3. 根据不同情况yield不同类型的ChatCompletionChunk。
+        """
         for i, chunk in enumerate(chunks):
             if i == 0:
+                # 处理第一个chunk，生成并yield初始的聊天完成chunk
                 yield cls._get_first_chat_completion_chunk(chunk)
-            # usage
+            
+            # 获取chunk中的choices
             choices = chunk.get("choices")
             if not choices:
+                # 如果没有choices，说明是最后一个chunk，生成并yield最终的聊天完成chunk
                 yield cls._get_final_chat_completion_chunk(chunk)
             else:
+                # 否则，将当前chunk转换为聊天完成chunk并yield
                 yield cls._to_chat_completion_chunk(chunk)
 
     @classmethod
@@ -604,75 +717,213 @@ Begin!"""
         cls,
         chunks: AsyncGenerator[CompletionChunk, None],
     ) -> AsyncGenerator[ChatCompletionChunk, None]:
+        """
+        异步方法，将CompletionChunk异步生成器转换为ChatCompletionChunk异步生成器。
+
+        此方法用于处理流式响应，将标准完成格式的chunks转换为聊天完成格式。
+
+        参数:
+        cls (type): 类本身，用于访问类方法。
+        chunks (AsyncGenerator[CompletionChunk, None]): 输入的CompletionChunk异步生成器。
+
+        返回:
+        AsyncGenerator[ChatCompletionChunk, None]: 转换后的ChatCompletionChunk异步生成器。
+
+        方法流程:
+        1. 初始化计数器i，用于标识第一个chunk。
+        2. 异步迭代输入的chunks。
+        3. 对每个chunk进行处理和转换。
+        4. 根据不同情况yield不同类型的ChatCompletionChunk。
+        """
         i = 0
         async for chunk in chunks:
             if i == 0:
+                # 处理第一个chunk，生成初始的聊天完成chunk
                 yield cls._get_first_chat_completion_chunk(chunk)
-            # usage
+            
+            # 获取chunk中的choices
             choices = chunk.get("choices")
             if not choices:
+                # 如果没有choices，说明是最后一个chunk，生成最终的聊天完成chunk
                 yield cls._get_final_chat_completion_chunk(chunk)
             else:
+                # 否则，将当前chunk转换为聊天完成chunk
                 yield cls._to_chat_completion_chunk(chunk)
+            
+            # 增加计数器
             i += 1
 
     @staticmethod
     @ensure_cache_cleared
     def _to_chat_completion(completion: Completion) -> ChatCompletion:
+        """
+        将Completion对象转换为ChatCompletion对象。
+
+        此静态方法用于将标准的Completion响应格式转换为ChatCompletion格式，
+        以适应聊天完成API的需求。
+
+        参数:
+        completion (Completion): 原始的完成响应对象。
+
+        返回:
+        ChatCompletion: 转换后的聊天完成响应对象。
+
+        函数流程:
+        1. 创建新的字典，设置基本属性（id, object, created, model）。
+        2. 转换choices列表，将每个选择项适配为聊天格式。
+        3. 复制usage信息。
+
+        注意:
+        - 使用@ensure_cache_cleared装饰器确保在执行此方法前清除缓存。
+        - id字段前添加"chat"前缀，以区分普通完成和聊天完成。
+        """
         return {
+            # 为id添加"chat"前缀
             "id": "chat" + completion["id"],
+            # 设置对象类型为聊天完成
             "object": "chat.completion",
+            # 复制创建时间戳
             "created": completion["created"],
+            # 复制模型信息
             "model": completion["model"],
+            # 转换选择列表
             "choices": [
                 {
-                    "index": i,
+                    "index": i,  # 保持原始索引
                     "message": {
-                        "role": "assistant",
-                        "content": choice["text"],
+                        "role": "assistant",  # 在聊天中，响应总是来自助手
+                        "content": choice["text"],  # 将文本内容作为消息内容
                     },
-                    "finish_reason": choice["finish_reason"],
+                    "finish_reason": choice["finish_reason"],  # 复制完成原因
                 }
                 for i, choice in enumerate(completion["choices"])
             ],
+            # 复制使用情况统计
             "usage": completion["usage"],
         }
 
     @staticmethod
     def _eval_gorilla_openfunctions_arguments(c, tools):
+        """
+        评估Gorilla OpenFunctions的参数。
+
+        此静态方法用于解析和评估Gorilla OpenFunctions模型的输出，提取工具调用的相关信息。
+        它尝试执行模型生成的代码，以获取工具调用的详细信息。
+
+        参数:
+        c (dict): 包含模型输出的字典，预期包含'choices'键。
+        tools (list): 可用工具的列表，用于提取工具名称。
+
+        返回:
+        tuple: 包含以下三个元素：
+            - a (Any): 通常为None，除非eval执行结果特别指定。
+            - b (str or None): 被调用的工具名称，如果解析失败则为None。
+            - c (dict or None): 工具调用的参数字典，如果解析失败则为None。
+
+        工作流程:
+        1. 从tools中提取所有工具的名称。
+        2. 从模型输出中获取参数文本。
+        3. 定义一个tool_call函数，用于模拟工具调用。
+        4. 尝试执行（eval）模型生成的代码。
+        5. 如果执行成功，返回解析后的工具调用信息。
+        6. 如果执行失败，记录错误并返回原始参数文本。
+
+        异常处理:
+        - 捕获所有可能的异常，记录错误信息，并返回原始参数文本。
+
+        注意:
+        - 此方法使用eval执行模型生成的代码，可能存在安全风险，应在受控环境中使用。
+        - 返回的a通常为None，除非eval执行的代码特别指定了返回值。
+        """
+        # 从tools中提取所有工具的名称
         tool_names = [tool["function"]["name"] for tool in tools]
+        # 获取模型生成的参数文本
         arguments = c["choices"][0]["text"]
 
+        # 定义tool_call函数，用于模拟工具调用
         def tool_call(n, **kwargs):
             return None, n, kwargs
 
         try:
+            # 尝试执行模型生成的代码
             a, b, c = eval(
                 arguments, {n: functools.partial(tool_call, n) for n in tool_names}
             )
             return a, b, c
         except Exception as e:
+            # 如果执行失败，记录错误并返回原始参数文本
             logger.error("Eval tool calls completion failed: %s", e)
             return arguments, None, None
 
     @staticmethod
     def _eval_glm_chat_arguments(c, tools):
+        """
+        评估GLM聊天模型的工具调用参数。
+
+        此静态方法用于解析GLM聊天模型的输出，提取工具调用的相关信息。
+        它处理两种可能的输出格式：字符串或包含工具调用信息的字典。
+
+        参数:
+        c (list): 包含模型输出的列表。通常是一个单元素列表，其中包含字符串或字典。
+        tools (list): 可用工具的列表。在当前实现中未直接使用。
+
+        返回:
+        tuple: 包含以下三个元素：
+            - content (str or None): 如果输出是字符串，则返回该字符串；否则为None。
+            - func_name (str or None): 如果输出是字典且包含'name'键，则返回函数名；否则为None。
+            - func_args (dict or None): 如果输出是字典且包含'parameters'键，则返回参数字典；否则为None。
+
+        异常处理:
+        - 如果无法解析输出（例如，遇到KeyError），将记录错误并返回字符串化的输入作为内容。
+
+        注意:
+        - 此方法假设GLM模型的输出格式为列表的第一个元素，可能是字符串或字典。
+        - 如果输出是字典，预期包含'name'和'parameters'键，分别对应函数名和参数。
+        """
         try:
+            # 检查输入的第一个元素是否为字符串
             if isinstance(c[0], str):
+                # 如果是字符串，直接返回该字符串作为内容，函数名和参数均为None
                 return c[0], None, None
+            # 如果不是字符串，假定为字典，返回函数名和参数
             return None, c[0]["name"], c[0]["parameters"]
         except KeyError:
-            logger.error("Can't parse glm output: %s", c)
+            # 如果解析失败（例如，字典中缺少预期的键），记录错误并返回字符串化的输入
+            logger.error("无法解析GLM输出: %s", c)
             return str(c), None, None
 
     @staticmethod
     def _eval_qwen_chat_arguments(c, tools):
+        """
+        评估Qwen聊天模型的工具调用参数。
+
+        此方法用于解析Qwen聊天模型的输出，提取工具调用的相关信息。它遵循Qwen模型的特定输出格式，
+        包括Action、Action Input和Observation等关键词。
+
+        参数:
+        c (dict): 包含模型输出的字典，通常包含'choices'键。
+        tools (list): 可用工具的列表，此参数在当前实现中未直接使用。
+
+        返回:
+        tuple: 包含以下三个元素：
+            - content (str): 提取的内容或最终答案。
+            - func_name (str or None): 被调用的函数名，如果没有则为None。
+            - func_args (dict or None): 函数的参数字典，如果没有则为None。
+
+        注意:
+        - 此方法基于Qwen模型的特定输出格式进行解析，参考了Qwen官方仓库的实现。
+        - 方法会处理可能的格式变化，如缺少Observation的情况。
+        - 如果无法解析为工具调用，将返回文本内容作为答案。
+        """
+        # 获取模型输出的文本内容
         text = c["choices"][0]["text"]
         try:
             # Refer to:
             # https://github.com/QwenLM/Qwen/blob/main/examples/react_prompt.md
             # https://github.com/QwenLM/Qwen/blob/main/openai_api.py#L297
             func_name, func_args, content = "", "", ""
+            
+            # 查找关键词的位置
             i = text.rfind("\nAction:")
             j = text.rfind("\nAction Input:")
             k = text.rfind("\nObservation:")
@@ -685,7 +936,10 @@ Begin!"""
                     # because the output text may have discarded the stop word.
                     text = text.rstrip() + "\nObservation:"  # Add it back.
                     k = text.rfind("\nObservation:")
+
+            # 如果找到了完整的Action序列
             if 0 <= t < i < j < k:
+                # 提取函数名、参数和内容
                 func_name = text[i + len("\nAction:") : j].strip()
                 func_args = text[j + len("\nAction Input:") : k].strip()
                 content = text[
@@ -694,7 +948,10 @@ Begin!"""
             if func_name:
                 return content, func_name, json.loads(func_args)
         except Exception as e:
+            # 记录解析失败的错误
             logger.error("Eval tool calls completion failed: %s", e)
+
+        # 如果无法解析为工具调用，提取文本内容作为答案
         t = max(text.rfind("\nThought:"), text.rfind("Thought:"))
         z = max(text.rfind("\nFinal Answer:"), text.rfind("Final Answer:"))
         if z >= 0:
@@ -709,18 +966,49 @@ Begin!"""
 
     @classmethod
     def _eval_tool_arguments(cls, model_family, c, tools):
+        """
+        评估工具参数并返回相应的内容、函数名和参数。
+
+        此方法根据不同的模型家族来解析工具调用的结果，并返回标准化的输出。
+
+        参数:
+        cls (type): 类本身，用于访问类方法。
+        model_family (object): 包含模型家族信息的对象。
+        c (dict): 包含模型输出的字典。
+        tools (list): 可用工具的列表。
+
+        返回:
+        tuple: 包含以下三个元素：
+            - content (str): 工具调用的内容或结果。
+            - func (str or None): 被调用的函数名，如果没有则为None。
+            - args (dict or None): 函数的参数，如果没有则为None。
+
+        异常:
+        Exception: 如果模型不支持工具调用，则抛出异常。
+        """
+        # 获取模型家族名称，优先使用model_family属性，如果不存在则使用model_name
         family = model_family.model_family or model_family.model_name
+
+        # 根据不同的模型家族选择相应的评估方法
         if family in ["gorilla-openfunctions-v1", "gorilla-openfunctions-v2"]:
+            # 对于Gorilla OpenFunctions模型，使用专门的评估方法
             content, func, args = cls._eval_gorilla_openfunctions_arguments(c, tools)
         elif family in GLM4_TOOL_CALL_FAMILY:
+            # 对于GLM4聊天模型，使用GLM聊天评估方法
             content, func, args = cls._eval_glm_chat_arguments(c, tools)
         elif family in QWEN_TOOL_CALL_FAMILY:
+            # 对于Qwen聊天模型，使用Qwen聊天评估方法
             content, func, args = cls._eval_qwen_chat_arguments(c, tools)
         else:
+            # 如果模型家族不在支持的列表中，抛出异常
             raise Exception(
                 f"Model {model_family.model_name} is not support tool calls."
             )
+
+        # 记录调试信息，包括工具调用的内容、函数名和参数
         logger.debug("Tool call content: %s, func: %s, args: %s", content, func, args)
+
+        # 返回评估结果
         return content, func, args
 
     @classmethod
@@ -734,10 +1022,20 @@ Begin!"""
         """
         family = model_family.model_family or model_family.model_name
         if family in QWEN_TOOL_CALL_FAMILY:
-            # Encapsulating function to reset 'found' after each call
+            # 封装函数以在每次调用后重置'found'
             found = False
 
             def process_tokens(tokens: str, delta: str):
+                """
+                处理输入的令牌，查找并返回"\nFinal Answer:"之后的内容。
+
+                参数:
+                tokens (str): 模型目前为止的输出字符串。
+                delta (str): 新增的令牌。
+
+                返回:
+                str: 如果找到"\nFinal Answer:"，返回其后的内容；否则返回空字符串或delta。
+                """
                 nonlocal found
                 # Once "Final Answer:" is found, future tokens are allowed.
                 if found:
@@ -751,13 +1049,43 @@ Begin!"""
 
             return process_tokens
         else:
+            # 对于非Qwen系列模型，直接返回所有新增的令牌
             return lambda tokens, delta: delta
 
     @classmethod
     def _tool_calls_completion_chunk(cls, model_family, model_uid, c, tools):
+        """
+        生成工具调用完成的分块响应。
+
+        此方法用于处理工具调用的完成情况，并生成相应的分块响应格式。它处理工具调用的结果，
+        并根据是否有工具被调用来构造不同的响应结构。
+
+        参数:
+        - cls: 类方法的类引用
+        - model_family: 模型家族，用于评估工具参数
+        - model_uid: 模型的唯一标识符
+        - c: 包含完成信息的字典
+        - tools: 可用的工具列表
+
+        返回:
+        - dict: 包含完成信息的字典，符合特定的分块响应格式
+
+        执行步骤:
+        1. 生成唯一标识符
+        2. 评估工具参数
+        3. 根据是否有工具被调用构造消息
+        4. 尝试获取使用情况信息
+        5. 构造并返回完整的分块响应字典
+        """
+        # 生成唯一标识符
         _id = str(uuid.uuid4())
+        
+        # 评估工具参数
         content, func, args = cls._eval_tool_arguments(model_family, c, tools)
+        
+        # 根据是否有工具被调用构造消息
         if func:
+            # 如果有工具被调用，构造包含工具调用信息的消息
             d = {
                 "role": "assistant",
                 "content": content,
@@ -774,17 +1102,23 @@ Begin!"""
             }
             finish_reason = "tool_calls"
         else:
+            # 如果没有工具被调用，构造普通的助手消息
             d = {"role": "assistant", "content": content, "tool_calls": []}
             finish_reason = "stop"
+        
+        # 尝试获取使用情况信息
         try:
             usage = c.get("usage")
             assert "prompt_tokens" in usage
         except Exception:
+            # 如果获取失败，使用默认值
             usage = {
                 "prompt_tokens": -1,
                 "completion_tokens": -1,
                 "total_tokens": -1,
             }
+        
+        # 构造并返回完整的分块响应字典
         return {
             "id": "chat" + f"cmpl-{_id}",
             "model": model_uid,
@@ -803,9 +1137,38 @@ Begin!"""
 
     @classmethod
     def _tool_calls_completion(cls, model_family, model_uid, c, tools):
+        """
+        生成工具调用完成的响应。
+
+        此方法用于处理工具调用的完成情况，并生成相应的响应格式。它处理工具调用的结果，
+        并根据是否有工具被调用来构造不同的响应结构。
+
+        参数:
+        - cls: 类方法的类引用
+        - model_family: 模型家族，用于评估工具参数
+        - model_uid: 模型的唯一标识符
+        - c: 包含完成信息的字典
+        - tools: 可用的工具列表
+
+        返回:
+        - dict: 包含完成信息的字典，符合特定的响应格式
+
+        执行步骤:
+        1. 生成唯一标识符
+        2. 评估工具参数
+        3. 根据是否有工具被调用构造消息
+        4. 尝试获取使用情况信息
+        5. 构造并返回完整的响应字典
+        """
+        # 生成唯一标识符
         _id = str(uuid.uuid4())
+        
+        # 评估工具参数
         content, func, args = cls._eval_tool_arguments(model_family, c, tools)
+        
+        # 根据是否有工具被调用构造消息
         if func:
+            # 如果有工具被调用，构造包含工具调用信息的消息
             m = {
                 "role": "assistant",
                 "content": content,
@@ -822,17 +1185,23 @@ Begin!"""
             }
             finish_reason = "tool_calls"
         else:
+            # 如果没有工具被调用，构造普通的助手消息
             m = {"role": "assistant", "content": content, "tool_calls": []}
             finish_reason = "stop"
+        
+        # 尝试获取使用情况信息
         try:
             usage = c.get("usage")
             assert "prompt_tokens" in usage
         except Exception:
+            # 如果获取失败，使用默认值
             usage = {
                 "prompt_tokens": -1,
                 "completion_tokens": -1,
                 "total_tokens": -1,
             }
+        
+        # 构造并返回完整的响应字典
         return {
             "id": "chat" + f"cmpl-{_id}",
             "model": model_uid,
@@ -850,11 +1219,39 @@ Begin!"""
 
     @classmethod
     def get_full_prompt(cls, model_family, prompt, system_prompt, chat_history, tools):
+        """
+        生成完整的提示文本。
+
+        此方法用于构建包含系统提示、聊天历史和用户提示的完整提示文本。它考虑了模型家族的提示风格，
+        并可以包含可选的系统提示和工具信息。
+
+        参数:
+        - model_family: 模型家族对象，包含提示风格信息。
+        - prompt: 用户的当前提示文本。
+        - system_prompt: 可选的系统提示文本。
+        - chat_history: 聊天历史记录列表，默认为空列表。
+        - tools: 可选的工具信息。
+
+        返回:
+        - full_prompt: 构建的完整提示文本。
+
+        执行步骤:
+        1. 确保模型家族有定义的提示风格。
+        2. 复制模型家族的提示风格以避免修改原始对象。
+        3. 如果提供了系统提示，则更新提示风格中的系统提示。
+        4. 确保聊天历史是一个列表（即使为空）。
+        5. 调用cls.get_prompt方法生成完整的提示文本。
+        """
+        # 确保模型家族有定义的提示风格
         assert model_family.prompt_style is not None
+        # 复制提示风格以避免修改原始对象
         prompt_style = model_family.prompt_style.copy()
+        # 如果提供了系统提示，则更新提示风格
         if system_prompt:
             prompt_style.system_prompt = system_prompt
+        # 确保聊天历史是一个列表
         chat_history = chat_history or []
+        # 生成完整的提示文本
         full_prompt = cls.get_prompt(prompt, chat_history, prompt_style, tools=tools)
         return full_prompt
 

@@ -44,9 +44,23 @@ UD_IMAGES: List[CustomImageModelFamilyV1] = []
 def get_user_defined_images() -> List[ImageModelFamilyV1]:
     with UD_IMAGE_LOCK:
         return UD_IMAGES.copy()  # 返回列表的副本以确保线程安全
-
-
 def register_image(model_spec: CustomImageModelFamilyV1, persist: bool):
+    """
+    注册一个新的自定义图像模型。
+
+    此函数用于将新的图像模型规格添加到用户定义的图像模型列表中。它执行模型名称和URI的验证，
+    确保新模型不与现有模型冲突，并可选择将模型规格持久化到文件系统。
+
+    参数:
+    model_spec (CustomImageModelFamilyV1): 要注册的自定义图像模型规格。
+    persist (bool): 是否将模型规格持久化到文件系统。
+
+    返回:
+    无返回值。
+
+    异常:
+    ValueError: 当模型名称无效、模型URI无效或模型名称与现有模型冲突时抛出。
+    """
     # 导入必要的工具函数和模型列表
     from ..utils import is_valid_model_name, is_valid_model_uri
     from . import BUILTIN_IMAGE_MODELS, MODELSCOPE_IMAGE_MODELS
@@ -77,10 +91,13 @@ def register_image(model_spec: CustomImageModelFamilyV1, persist: bool):
 
     # 如果需要持久化，将模型规格保存到文件
     if persist:
+        # 构建持久化文件路径
         persist_path = os.path.join(
             XINFERENCE_MODEL_DIR, "image", f"{model_spec.model_name}.json"
         )
+        # 确保目录存在
         os.makedirs(os.path.dirname(persist_path), exist_ok=True)
+        # 将模型规格序列化为JSON并写入文件
         with open(persist_path, "w") as f:
             f.write(model_spec.json())
 

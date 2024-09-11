@@ -37,6 +37,19 @@ IS_NEW_HUGGINGFACE_HUB: bool = huggingface_hub.__version__ >= "0.23.0"
 
 
 def is_locale_chinese_simplified() -> bool:
+    """
+    检查当前系统的语言环境是否为简体中文。
+
+    返回值:
+        bool: 如果当前语言环境是简体中文，返回True；否则返回False。
+
+    实现细节:
+    1. 导入locale模块，用于获取系统的语言环境信息。
+    2. 使用try-except块来处理可能出现的异常。
+    3. 调用locale.getdefaultlocale()获取默认的语言环境。
+    4. 检查返回的语言代码是否为'zh_CN'（简体中文）。
+    5. 如果在过程中出现任何异常，返回False。
+    """
     import locale
 
     try:
@@ -47,6 +60,18 @@ def is_locale_chinese_simplified() -> bool:
 
 
 def download_from_modelscope() -> bool:
+    """
+    确定是否应该从ModelScope下载模型。
+
+    返回值:
+        bool: 如果应该从ModelScope下载，返回True；否则返回False。
+
+    实现细节:
+    1. 首先检查环境变量XINFERENCE_ENV_MODEL_SRC是否设置。
+    2. 如果设置了，检查其值是否为"modelscope"。
+    3. 如果环境变量未设置，则调用is_locale_chinese_simplified()函数检查系统语言环境。
+    4. 如果系统语言为简体中文，返回True；否则返回False。
+    """
     if os.environ.get(XINFERENCE_ENV_MODEL_SRC):
         return os.environ.get(XINFERENCE_ENV_MODEL_SRC) == "modelscope"
     elif is_locale_chinese_simplified():
@@ -56,16 +81,57 @@ def download_from_modelscope() -> bool:
 
 
 def download_from_csghub() -> bool:
+    """
+    确定是否应该从CSGHub下载模型。
+
+    返回值:
+        bool: 如果应该从CSGHub下载，返回True；否则返回False。
+
+    实现细节:
+    1. 检查环境变量XINFERENCE_ENV_MODEL_SRC的值是否为"csghub"。
+    2. 如果是，返回True；否则返回False。
+    """
     if os.environ.get(XINFERENCE_ENV_MODEL_SRC) == "csghub":
         return True
     return False
 
 
 def symlink_local_file(path: str, local_dir: str, relpath: str) -> str:
+    """
+    在本地目录中为指定文件创建符号链接。
+
+    此函数用于在指定的本地目录中创建一个指向源文件的符号链接。它主要用于模型文件的管理，
+    允许在不复制大型文件的情况下在不同位置访问这些文件。
+
+    参数:
+        path (str): 源文件的完整路径。
+        local_dir (str): 目标本地目录，用于存放符号链接。
+        relpath (str): 文件相对于下载目录的路径，用于在本地目录中重建相同的目录结构。
+
+    返回值:
+        str: 创建的符号链接的完整路径。
+
+    函数流程:
+    1. 导入必要的函数 _create_symlink。
+    2. 将相对路径转换为适合本地文件系统的格式。
+    3. 在 Windows 系统上进行特殊处理，防止潜在的安全风险。
+    4. 构建目标文件的完整路径。
+    5. 验证目标路径的安全性。
+    6. 创建必要的目录结构。
+    7. 获取源文件的真实路径。
+    8. 创建符号链接。
+    9. 返回创建的符号链接路径。
+
+    异常处理:
+    - 如果在 Windows 上遇到不安全的文件名，抛出 ValueError。
+    - 如果目标路径不在指定的本地目录内，抛出 ValueError。
+    """
     from huggingface_hub.file_download import _create_symlink
 
     # cross-platform transcription of filename, to be used as a local file path.
     relative_filename = os.path.join(*relpath.split("/"))
+    
+    # Windows 系统特殊处理：检查文件名是否包含潜在的安全风险
     if os.name == "nt":
         if relative_filename.startswith("..\\") or "\\..\\" in relative_filename:
             raise ValueError(
@@ -74,6 +140,8 @@ def symlink_local_file(path: str, local_dir: str, relpath: str) -> str:
             )
     # Using `os.path.abspath` instead of `Path.resolve()` to avoid resolving symlinks
     local_dir_filepath = os.path.join(local_dir, relative_filename)
+    
+    # 验证目标路径是否在指定的本地目录内
     if (
         Path(os.path.abspath(local_dir))
         not in Path(os.path.abspath(local_dir_filepath)).parents
@@ -83,9 +151,16 @@ def symlink_local_file(path: str, local_dir: str, relpath: str) -> str:
             " directory."
         )
 
+    # 创建目标文件所在的目录（如果不存在）
     os.makedirs(os.path.dirname(local_dir_filepath), exist_ok=True)
+    
+    # 获取源文件的真实路径
     real_blob_path = os.path.realpath(path)
+    
+    # 创建符号链接
     _create_symlink(real_blob_path, local_dir_filepath, new_blob=False)
+    
+    # 返回创建的符号链接的路径
     return local_dir_filepath
 
 
@@ -588,17 +663,28 @@ def cache(model_spec: CacheableModelSpec, model_description_type: type):
 
 
 def patch_trust_remote_code():
-    """sentence-transformers calls transformers without the trust_remote_code=True, some embedding
-    models will fail to load, e.g. jina-embeddings-v2-base-en
+    """
+    修补 transformers 库中的 trust_remote_code 功能。
 
-    :return:
+    此函数旨在解决某些嵌入模型（如 jina-embeddings-v2-base-en）在使用 sentence-transformers 时
+    无法正确加载的问题。它通过替换 transformers 库中的 resolve_trust_remote_code 函数来实现。
+
+    函数流程：
+    1. 尝试从 transformers 库导入 resolve_trust_remote_code 函数。
+    2. 如果导入失败，记录错误日志。
+    3. 如果导入成功，定义一个新的 _patched_resolve_trust_remote_code 函数。
+    4. 比较原始函数和新函数的代码对象，如果不同则替换。
+
+    异常处理：
+    - 捕获 ImportError，并记录错误日志。
+
+    注意：此修补可能会影响安全性，因为它总是信任远程代码。
     """
     try:
         from transformers.dynamic_module_utils import resolve_trust_remote_code
     except ImportError:
         logger.error("Patch transformers trust_remote_code failed.")
     else:
-
         def _patched_resolve_trust_remote_code(*args, **kwargs):
             logger.info("Patched resolve_trust_remote_code: %s %s", args, kwargs)
             return True
@@ -613,6 +699,26 @@ def patch_trust_remote_code():
 
 
 def select_device(device):
+    """
+    选择并验证指定的计算设备。
+
+    参数：
+    device (str): 指定的设备，可以是 'auto' 或特定设备名称。
+
+    返回：
+    str: 可用的计算设备名称。
+
+    函数流程：
+    1. 尝试导入 torch 库，如果失败则抛出 ImportError。
+    2. 如果 device 为 'auto'，调用 get_available_device() 获取可用设备。
+    3. 否则，检查指定的设备是否可用，如果不可用则抛出 ValueError。
+
+    异常处理：
+    - 捕获 ImportError，提示用户安装 torch。
+    - 如果指定的设备不可用，抛出 ValueError。
+
+    注意：此函数依赖于 torch 库和自定义的 is_device_available 函数。
+    """
     try:
         import torch  # noqa: F401
     except ImportError:
@@ -630,7 +736,19 @@ def select_device(device):
 
 
 def convert_float_to_int_or_str(model_size: float) -> Union[int, str]:
-    """convert float to int or string
+    """
+    将浮点数转换为整数或字符串。
+
+    参数：
+    model_size (float): 要转换的模型大小。
+
+    返回：
+    Union[int, str]: 如果 model_size 可以精确表示为整数，则返回整数；否则返回字符串。
+
+    函数逻辑：
+    1. 检查 model_size 是否可以精确表示为整数。
+    2. 如果可以，返回整数形式。
+    3. 否则，返回字符串形式。
 
     if float can be presented as int, convert it to int, otherwise convert it to string
     """
@@ -641,6 +759,28 @@ def convert_float_to_int_or_str(model_size: float) -> Union[int, str]:
 
 
 def ensure_cache_cleared(func: Callable):
+    """
+    装饰器函数，确保在被装饰函数执行后清理缓存。
+
+    参数：
+    func (Callable): 要装饰的函数。
+
+    返回：
+    Callable: 装饰后的函数。
+
+    函数逻辑：
+    1. 检查被装饰函数是否为协程函数或异步生成器函数，如果是则抛出断言错误。
+    2. 如果被装饰函数是生成器函数，创建一个新的生成器函数：
+       - 遍历原生成器的所有元素并yield。
+       - 在遍历结束后，执行垃圾回收和清空缓存。
+    3. 如果被装饰函数是普通函数，创建一个新的函数：
+       - 执行原函数。
+       - 在 finally 块中执行垃圾回收和清空缓存。
+
+    注意：
+    - 这个装饰器不适用于协程函数和异步生成器函数。
+    - 它使用 gc.collect() 进行垃圾回收，使用 empty_cache() 清空缓存（可能是GPU缓存）。
+    """
     assert not inspect.iscoroutinefunction(func) and not inspect.isasyncgenfunction(
         func
     )
@@ -667,6 +807,21 @@ def ensure_cache_cleared(func: Callable):
 
 
 def set_all_random_seed(seed: int):
+    """
+    设置所有相关库的随机种子，以确保实验的可重复性。
+
+    参数：
+    seed (int): 要设置的随机种子。
+
+    函数作用：
+    1. 设置 Python 内置 random 模块的种子。
+    2. 设置 NumPy 库的随机种子。
+    3. 设置 PyTorch 的 CPU 随机种子。
+    4. 设置 PyTorch 的所有 GPU 设备的随机种子。
+
+    这个函数在机器学习和深度学习实验中非常有用，可以确保在相同的种子下
+    获得相同的随机结果，从而提高实验的可重复性和可比较性。
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

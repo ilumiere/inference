@@ -28,6 +28,24 @@ logger = logging.getLogger(__name__)
 
 
 class ImageInterface:
+    """
+    图像生成界面类，用于构建和管理图像生成模型的用户界面。
+
+    该类提供了一个通用的接口，用于创建基于Stable Diffusion模型的图像生成界面。
+    它支持文本到图像和图像到图像的转换功能。
+
+    属性:
+        endpoint (str): API端点URL
+        model_uid (str): 模型的唯一标识符
+        model_family (str): 模型所属的系列（如'stable_diffusion'）
+        model_name (str): 模型名称
+        model_id (str): 模型ID
+        model_revision (str): 模型版本
+        model_ability (List[str]): 模型支持的能力列表
+        controlnet (Union[None, List[Dict[str, Union[str, None]]]]): ControlNet配置
+        access_token (Optional[str]): 用于API认证的访问令牌
+    """
+
     def __init__(
         self,
         endpoint: str,
@@ -40,6 +58,20 @@ class ImageInterface:
         controlnet: Union[None, List[Dict[str, Union[str, None]]]],
         access_token: Optional[str],
     ):
+        """
+        初始化ImageInterface实例。
+
+        参数:
+            endpoint (str): API端点URL
+            model_uid (str): 模型的唯一标识符
+            model_family (str): 模型所属的系列
+            model_name (str): 模型名称
+            model_id (str): 模型ID
+            model_revision (str): 模型版本
+            model_ability (List[str]): 模型支持的能力列表
+            controlnet (Union[None, List[Dict[str, Union[str, None]]]]): ControlNet配置
+            access_token (Optional[str]): 用于API认证的访问令牌
+        """
         self.endpoint = endpoint
         self.model_uid = model_uid
         self.model_family = model_family
@@ -53,6 +85,19 @@ class ImageInterface:
         )
 
     def build(self) -> gr.Blocks:
+        """
+        构建主界面。
+
+        返回:
+            gr.Blocks: 配置好的Gradio界面对象
+
+        该方法执行以下步骤:
+        1. 确保模型属于'stable_diffusion'系列
+        2. 构建主界面
+        3. 配置界面队列
+        4. 手动触发启动事件
+        5. 设置网页图标
+        """
         assert "stable_diffusion" in self.model_family
 
         interface = self.build_main_interface()
@@ -73,6 +118,16 @@ class ImageInterface:
         return interface
 
     def text2image_interface(self) -> "gr.Blocks":
+        """
+        构建文本到图像转换的界面。
+
+        返回:
+            gr.Blocks: 文本到图像转换的Gradio界面对象
+
+        该方法定义了一个内部函数text_generate_image，用于处理文本到图像的转换请求。
+        然后，它创建一个Gradio界面，包含输入字段（如提示词、图像数量、尺寸等）和输出图库。
+        """
+
         def text_generate_image(
             prompt: str,
             n: int,
@@ -81,6 +136,27 @@ class ImageInterface:
             num_inference_steps: int,
             negative_prompt: Optional[str] = None,
         ) -> PIL.Image.Image:
+            """
+            根据文本提示生成图像。
+
+            参数:
+                prompt (str): 用于生成图像的文本提示
+                n (int): 要生成的图像数量
+                size_width (int): 生成图像的宽度
+                size_height (int): 生成图像的高度
+                num_inference_steps (int): 推理步骤数
+                negative_prompt (Optional[str]): 负面提示词，用于指定不希望出现在图像中的元素
+
+            返回:
+                List[PIL.Image.Image]: 生成的图像列表
+
+            该函数执行以下步骤:
+            1. 创建RESTful客户端并获取模型
+            2. 设置图像生成参数
+            3. 调用模型的text_to_image方法生成图像
+            4. 将返回的base64编码图像数据转换为PIL.Image对象
+            5. 返回生成的图像列表
+            """
             from ..client import RESTfulClient
 
             client = RESTfulClient(self.endpoint)
@@ -112,6 +188,8 @@ class ImageInterface:
             return images
 
         with gr.Blocks() as text2image_vl_interface:
+            # 创建文本到图像界面的Gradio组件
+            # 包括提示词输入、负面提示词输入、生成按钮、图像参数设置和输出图库
             with gr.Column():
                 with gr.Row():
                     with gr.Column(scale=10):
@@ -155,6 +233,16 @@ class ImageInterface:
         return text2image_vl_interface
 
     def image2image_interface(self) -> "gr.Blocks":
+        """
+        构建图像到图像转换的界面。
+
+        返回:
+            gr.Blocks: 图像到图像转换的Gradio界面对象
+
+        该方法定义了一个内部函数image_generate_image，用于处理图像到图像的转换请求。
+        然后，它创建一个Gradio界面，包含输入字段（如提示词、图像上传、参数设置等）和输出图库。
+        """
+
         def image_generate_image(
             prompt: str,
             negative_prompt: str,
@@ -165,6 +253,30 @@ class ImageInterface:
             num_inference_steps: int,
             padding_image_to_multiple: int,
         ) -> PIL.Image.Image:
+            """
+            根据输入图像和文本提示生成新图像。
+
+            参数:
+                prompt (str): 用于生成图像的文本提示
+                negative_prompt (str): 负面提示词
+                image (PIL.Image.Image): 输入的源图像
+                n (int): 要生成的图像数量
+                size_width (int): 生成图像的宽度
+                size_height (int): 生成图像的高度
+                num_inference_steps (int): 推理步骤数
+                padding_image_to_multiple (int): 图像填充到的倍数
+
+            返回:
+                List[PIL.Image.Image]: 生成的图像列表
+
+            该函数执行以下步骤:
+            1. 创建RESTful客户端并获取模型
+            2. 设置图像生成参数
+            3. 将输入图像转换为字节流
+            4. 调用模型的image_to_image方法生成新图像
+            5. 将返回的base64编码图像数据转换为PIL.Image对象
+            6. 返回生成的图像列表
+            """
             from ..client import RESTfulClient
 
             client = RESTfulClient(self.endpoint)
@@ -205,6 +317,8 @@ class ImageInterface:
             return images
 
         with gr.Blocks() as image2image_inteface:
+            # 创建图像到图像界面的Gradio组件
+            # 包括提示词输入、负面提示词输入、图像上传、参数设置和输出图库
             with gr.Column():
                 with gr.Row():
                     with gr.Column(scale=10):
@@ -257,6 +371,15 @@ class ImageInterface:
         return image2image_inteface
 
     def build_main_interface(self) -> "gr.Blocks":
+        """
+        构建主界面，包括文本到图像和图像到图像的选项卡。
+
+        返回:
+            gr.Blocks: 主界面的Gradio对象
+
+        该方法创建一个包含多个选项卡的主界面，每个选项卡对应一种图像生成功能。
+        它还设置了界面的标题、CSS样式和其他元数据。
+        """
         with gr.Blocks(
             title=f"🎨 Xinference Stable Diffusion: {self.model_name} 🎨",
             css="""

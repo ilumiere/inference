@@ -286,41 +286,68 @@ class InferenceRequest:
             if self.generate_config is None
             else self.generate_config.get("request_id", None)
         )
-
     @functools.lru_cache
     def get_generate_configs(
         self, eos_token_id: int, builtin_stop_token_ids: Optional[Tuple[int]] = None
     ):
         """
-        获取生成配置。
+        获取并缓存文本生成的配置参数。
+
+        此方法使用@functools.lru_cache装饰器来缓存结果，提高重复调用的效率。
 
         参数:
-        eos_token_id: 结束标记的ID
-        builtin_stop_token_ids: 内置停止标记的ID元组
+        eos_token_id (int): 表示序列结束的标记ID。
+        builtin_stop_token_ids (Optional[Tuple[int]]): 内置的停止标记ID元组，默认为None。
 
         返回:
-        包含各种生成配置参数的元组
+        Tuple: 包含以下生成配置参数的元组：
+            - max_new_tokens (int): 生成的最大新标记数。
+            - stream_interval (int): 流式生成的间隔。
+            - include_usage (bool): 是否包含使用情况。
+            - stop_str (Optional[str]): 停止生成的字符串。
+            - stop_token_ids (Set[int]): 停止标记ID集合。
+            - temperature (float): 生成的温度参数。
+            - repetition_penalty (float): 重复惩罚参数。
+            - top_p (float): Top-p采样参数。
+            - top_k (int): Top-k采样参数。
+
+        说明:
+        该方法从self.sanitized_generate_config中提取各种生成参数，并进行必要的类型转换和默认值设置。
+        它还合并了传入的eos_token_id和builtin_stop_token_ids到stop_token_ids集合中。
         """
         from ..types import max_tokens_field
 
+        # 获取最大新标记数，默认值来自max_tokens_field
         max_new_tokens = int(
             self.sanitized_generate_config.get("max_tokens", max_tokens_field.default)
         )
+        # 获取流式间隔，默认为2
         stream_interval = self.sanitized_generate_config.get("stream_interval", 2)
+        # 获取是否包含使用情况
         include_usage = self.include_usage
+        # 获取停止字符串，默认为None
         stop_str = self.sanitized_generate_config.get("stop", None)
+        # 获取停止标记ID列表，如果不存在则使用空列表
         stop_token_ids = (
             self.sanitized_generate_config.get("stop_token_ids", None) or []
         )
+        # 将停止标记ID转换为集合，并添加eos_token_id
         stop_token_ids = set(stop_token_ids)
         stop_token_ids.add(eos_token_id)
+        # 如果提供了内置停止标记ID，则更新到集合中
         stop_token_ids.update(builtin_stop_token_ids or [])
+        # 获取温度参数，默认为1.0
         temperature = float(self.sanitized_generate_config.get("temperature", 1.0))
+        # 获取重复惩罚参数，默认为1.0
         repetition_penalty = float(
             self.sanitized_generate_config.get("repetition_penalty", 1.0)
         )
+        # 获取top_p参数，默认为1.0
         top_p = float(self.sanitized_generate_config.get("top_p", 1.0))
+        # 获取top_k参数，默认为-1（表示禁用）
         top_k = int(self.sanitized_generate_config.get("top_k", -1))  # -1表示禁用
+
+        # 返回所有配置参数的元组
         return (
             max_new_tokens,
             stream_interval,
@@ -556,97 +583,161 @@ class SchedulerActor(xo.StatelessActor):
 
     async def step(self):
         """
-        执行一步调度。
+        执行一步调度操作。
 
-        处理请求，执行批量推理，并处理完成的请求。
+        此方法是调度器的核心，负责处理请求、执行批量推理，并处理完成的请求。
+        它是一个异步方法，允许在处理大量请求时不阻塞其他操作。
+
+        主要功能：
+        1. 处理待处理的请求
+        2. 执行批量推理
+        3. 处理流式和非流式输出
+        4. 管理已完成的请求
+        5. 处理中止的请求
+        6. 更新KV缓存
+        7. 清理内存
+
+        无参数
+        无返回值
         """
+        # 处理待处理的请求，获取可以进行推理的请求列表
         req_list = self._handle_request()
         if not req_list:
+            # 如果没有待处理的请求，直接返回
             return
+        
+        # 使用模型对请求列表进行批量推理
         self._model.batch_inference(req_list)
 
+        # 用于记录已停止的批次索引
         stopped_batch_indexes = set()
+
+        # 遍历所有请求，处理推理结果
         for idx, r in enumerate(req_list):
             if r.stream:
+                # 对于流式请求，逐个发送完成的部分
                 for completion in r.completion:
                     await r.future_or_queue.put(completion)
+                # 清空已发送的完成部分
                 r.completion = []
 
             if not r.stopped:
+                # 如果请求未停止，将其重新加入运行队列
                 self._running_queue.append(r)
             else:
+                # 处理已停止的请求
                 if r.new_tokens:
+                    # 记录已停止的批次索引，用于后续更新KV缓存
                     stopped_batch_indexes.add(idx)
-                # set kv_cache to None for collection
+                # 清除KV缓存以便垃圾回收
                 r.kv_cache = None
                 rid = r.request_id
-                # clear data structure
+                # 清理数据结构
                 if rid is not None:
                     self._id_to_req.pop(rid, None)
                     self._abort_req_ids.discard(rid)
 
-                if r.aborted:  # stop due to abort
-                    # handle abort result
+                if r.aborted:  
+                    # 处理被中止的请求
                     if r.stream:
+                        # 对于流式请求，发送中止标志
                         await r.future_or_queue.put(XINFERENCE_STREAMING_ABORT_FLAG)
                     else:
-                        r.future_or_queue.set_result(
-                            XINFERENCE_NON_STREAMING_ABORT_FLAG
-                        )
+                        # 对于非流式请求，设置中止结果
+                        r.future_or_queue.set_result(XINFERENCE_NON_STREAMING_ABORT_FLAG)
                 else:
-                    if r.error_msg is None:  # normal stop
+                    if r.error_msg is None:  
+                        # 正常停止的情况
                         if not r.stream:
+                            # 非流式请求，设置完成结果
                             r.future_or_queue.set_result(r.completion[0])
                         else:
+                            # 流式请求，发送完成标志
                             await r.future_or_queue.put(XINFERENCE_STREAMING_DONE_FLAG)
                     # Abnormal stop, currently indicates that the parameter check does not pass,
                     # and does not participate in the inference
                     else:
+                        # 异常停止，通常是参数检查未通过
                         if not r.stream:
+                            # 非流式请求，抛出异常
                             r.future_or_queue.set_exception(ValueError(r.error_msg))
                         else:
-                            await r.future_or_queue.put(
-                                XINFERENCE_STREAMING_ERROR_FLAG + r.error_msg
-                            )
+                            # 流式请求，发送错误标志和消息
+                            await r.future_or_queue.put(XINFERENCE_STREAMING_ERROR_FLAG + r.error_msg)
 
         # Some requests have been completed. Batch size needs to be reduced for kv cache.
         if stopped_batch_indexes and len(self._running_queue) > 0:
             kv_cache = self._running_queue[0].kv_cache
-            reduced_kv_cache = _get_valid_batch_kv_cache(
-                kv_cache, stopped_batch_indexes
-            )
+            # 获取更新后的KV缓存
+            reduced_kv_cache = _get_valid_batch_kv_cache(kv_cache, stopped_batch_indexes)
+            # 更新所有运行中请求的KV缓存
             for r in self._running_queue:
                 r.kv_cache = reduced_kv_cache
 
+        # 清空模型缓存，释放内存
         self._empty_cache()
-
     async def add_request(self, prompt: str, future_or_queue, *args, **kwargs):
         """
         添加新的推理请求到等待队列。
 
+        此方法用于创建新的推理请求并将其添加到调度器的等待队列中。它还处理请求ID的唯一性检查。
+
         参数:
-        prompt (str): 推理的提示文本
-        future_or_queue: 用于获取结果的Future或Queue对象
-        *args, **kwargs: 额外的参数
+        prompt (str): 推理的提示文本，作为模型的输入。
+        future_or_queue: 用于获取结果的Future或Queue对象，用于异步返回推理结果。
+        *args, **kwargs: 额外的参数，用于传递给InferenceRequest构造函数。
+
+        流程:
+        1. 创建新的InferenceRequest对象。
+        2. 检查请求ID的唯一性（如果存在）。
+        3. 将请求添加到等待队列和ID映射字典中。
+
+        异常:
+        - 如果提供的请求ID已存在，则抛出KeyError。
+
+        注意: 此方法是异步的，但主要操作是同步执行的。异步声明允许在更大的异步上下文中使用。
         """
+        # 创建新的推理请求实例
         req = InferenceRequest(prompt, future_or_queue, True, *args, **kwargs)
         rid = req.request_id
         if rid is not None:
+            # 如果请求ID已存在，抛出异常
             if rid in self._id_to_req:
                 raise KeyError(f"Request id: {rid} has already existed!")
+            # 将请求ID和请求对象添加到映射字典中
             self._id_to_req[rid] = req
+        # 将请求添加到等待队列
         self._waiting_queue.append(req)
 
     async def abort_request(self, req_id: str) -> str:
         """
-        Abort a request.
-        Abort a submitted request. If the request is finished or not found, this method will be a no-op.
+        中止一个已提交的请求。
+
+        此方法用于尝试中止一个正在进行或等待中的推理请求。如果请求已完成或未找到，此方法不会执行任何操作。
+
+        参数:
+        req_id (str): 要中止的请求的唯一标识符。
+
+        返回:
+        str: 表示中止操作结果的消息。可能的返回值包括：
+             - AbortRequestMessage.NOT_FOUND.name: 请求未找到
+             - AbortRequestMessage.DONE.name: 请求已标记为中止
+
+        流程:
+        1. 检查请求ID是否存在于已知请求中。
+        2. 如果不存在，记录日志并返回NOT_FOUND消息。
+        3. 如果存在，将请求ID添加到待中止集合中，记录日志，并返回DONE消息。
+
+        注意: 
+        - 此方法不会立即停止正在进行的推理，而是标记请求为待中止状态。
+        - 实际的中止操作将在调度器的下一个处理周期中执行。
         """
         if req_id not in self._id_to_req:
             # 如果请求ID不存在，记录日志并返回未找到的消息
             logger.info(f"请求ID: {req_id} 未找到。对xinference无操作。")
             return AbortRequestMessage.NOT_FOUND.name
         else:
+            # 将请求ID添加到待中止集合中
             self._abort_req_ids.add(req_id)
             logger.info(f"Request id: {req_id} found to be aborted.")
             return AbortRequestMessage.DONE.name
@@ -655,14 +746,34 @@ class SchedulerActor(xo.StatelessActor):
         """
         运行调度器的主循环。
 
-        持续执行step方法，处理异常并记录错误。
+        此方法是调度器的核心，负责持续执行调度任务。它在一个无限循环中运行，
+        定期调用step方法来处理待处理的请求和任务。
+
+        主要功能:
+        1. 持续执行调度任务
+        2. 处理可能发生的异常
+        3. 记录错误信息
+
+        异常处理:
+        - 捕获并记录所有可能发生的异常，确保调度器不会因单个错误而完全停止
+
+        注意:
+        - 此方法是异步的，使用了asyncio库来实现非阻塞操作
+        - 循环中有一个短暂的休眠时间，以防止过度消耗CPU资源
         """
         try:
             while True:
-                # wait 10ms
+                # 等待10毫秒，避免过度消耗CPU资源
+                # 这个短暂的暂停允许其他异步任务有机会执行
                 await asyncio.sleep(0.01)
+                
+                # 调用step方法执行实际的调度任务
+                # step方法预期是异步的，负责处理单个调度周期的所有逻辑
                 await self.step()
         except Exception as e:
+            # 捕获并记录任何异常
+            # 使用logger.exception可以同时记录异常信息和堆栈跟踪
             logger.exception(
                 f"Scheduler actor uid: {self.uid}, address: {self.address} run with error: {e}"
             )
+            # 注意：这里异常后循环会终止，可能需要考虑重启机制或更健壮的错误处理

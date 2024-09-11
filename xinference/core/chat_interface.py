@@ -33,6 +33,27 @@ logger = logging.getLogger(__name__)
 
 
 class GradioInterface:
+    """
+    GradioInterface 类用于构建基于 Gradio 的聊天界面。
+    
+    该类负责创建和配置不同类型的聊天界面，包括普通聊天、视觉语言聊天等。
+    它根据模型的能力和特性来决定构建何种类型的界面。
+
+    属性:
+        endpoint (str): API 端点 URL
+        model_uid (str): 模型的唯一标识符
+        model_name (str): 模型名称
+        model_size_in_billions (int): 模型参数量（以十亿为单位）
+        model_type (str): 模型类型
+        model_format (str): 模型格式
+        quantization (str): 量化方法
+        context_length (int): 上下文长度
+        model_ability (List[str]): 模型能力列表
+        model_description (str): 模型描述
+        model_lang (List[str]): 模型支持的语言列表
+        _access_token (Optional[str]): 访问令牌，用于 API 认证
+    """
+
     def __init__(
         self,
         endpoint: str,
@@ -48,6 +69,23 @@ class GradioInterface:
         model_lang: List[str],
         access_token: Optional[str],
     ):
+        """
+        初始化 GradioInterface 实例。
+
+        参数:
+            endpoint (str): API 端点 URL
+            model_uid (str): 模型的唯一标识符
+            model_name (str): 模型名称
+            model_size_in_billions (int): 模型参数量（以十亿为单位）
+            model_type (str): 模型类型
+            model_format (str): 模型格式
+            quantization (str): 量化方法
+            context_length (int): 上下文长度
+            model_ability (List[str]): 模型能力列表
+            model_description (str): 模型描述
+            model_lang (List[str]): 模型支持的语言列表
+            access_token (Optional[str]): 访问令牌，用于 API 认证
+        """
         self.endpoint = endpoint
         self.model_uid = model_uid
         self.model_name = model_name
@@ -64,6 +102,14 @@ class GradioInterface:
         )
 
     def build(self) -> "gr.Blocks":
+        """
+        构建 Gradio 界面。
+
+        根据模型能力选择合适的界面类型，并配置界面属性。
+
+        返回:
+            gr.Blocks: 配置好的 Gradio 界面对象
+        """
         if "vision" in self.model_ability:
             interface = self.build_chat_vl_interface()
         elif "chat" in self.model_ability:
@@ -76,6 +122,7 @@ class GradioInterface:
         # started, that event will not run, so manually invoke the startup events.
         # See: https://github.com/gradio-app/gradio/issues/5228
         interface.startup_events()
+        # 设置网页图标
         favicon_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             os.path.pardir,
@@ -90,13 +137,37 @@ class GradioInterface:
     def build_chat_interface(
         self,
     ) -> "gr.Blocks":
+        """
+        构建普通聊天界面。
+
+        返回:
+            gr.Blocks: 配置好的聊天界面对象
+        """
         def flatten(matrix: List[List[str]]) -> List[str]:
+            """
+            将二维列表扁平化为一维列表。
+
+            参数:
+                matrix (List[List[str]]): 二维字符串列表
+
+            返回:
+                List[str]: 扁平化后的一维列表
+            """
             flat_list = []
             for row in matrix:
                 flat_list += row
             return flat_list
 
         def to_chat(lst: List[str]) -> List[ChatCompletionMessage]:
+            """
+            将字符串列表转换为聊天完成消息列表。
+
+            参数:
+                lst (List[str]): 字符串列表
+
+            返回:
+                List[ChatCompletionMessage]: 聊天完成消息列表
+            """
             res = []
             for i in range(len(lst)):
                 role = "assistant" if i % 2 == 1 else "user"
@@ -110,6 +181,19 @@ class GradioInterface:
             temperature: float,
             lora_name: str,
         ) -> Generator:
+            """
+            聊天生成函数的包装器。
+
+            参数:
+                message (str): 用户输入的消息
+                history (List[List[str]]): 聊天历史
+                max_tokens (int): 生成的最大标记数
+                temperature (float): 生成的温度参数
+                lora_name (str): LoRA 模型名称
+
+            返回:
+                Generator: 生成的响应内容生成器
+            """
             from ..client import RESTfulClient
 
             client = RESTfulClient(self.endpoint)
@@ -183,7 +267,26 @@ class GradioInterface:
     def build_chat_vl_interface(
         self,
     ) -> "gr.Blocks":
+        """
+        构建视觉语言聊天界面。
+
+        返回:
+            gr.Blocks: 配置好的视觉语言聊天界面对象
+        """
         def predict(history, bot, max_tokens, temperature, stream):
+            """
+            预测函数，用于生成聊天响应。
+
+            参数:
+                history (List): 聊天历史
+                bot (List): 机器人响应列表
+                max_tokens (int): 生成的最大标记数
+                temperature (float): 生成的温度参数
+                stream (bool): 是否使用流式输出
+
+            返回:
+                Generator: 生成的历史和机器人响应
+            """
             from ..client import RESTfulClient
 
             client = RESTfulClient(self.endpoint)
@@ -194,7 +297,7 @@ class GradioInterface:
             prompt = history[-1]
             assert prompt["role"] == "user"
             prompt = prompt["content"]
-            # multimodal chat does not support stream.
+            # 多模态聊天不支持流式输出
             if stream:
                 response_content = ""
                 for chunk in model.chat(
@@ -237,13 +340,33 @@ class GradioInterface:
                 yield history, bot
 
         def add_text(history, bot, text, image, video):
+            """
+            添加用户输入的文本、图片或视频到聊天历史记录中。
+
+            此函数处理用户的输入，包括纯文本、图片和视频，并将其添加到聊天历史和机器人响应列表中。
+
+            参数:
+            history (List): 聊天历史记录列表
+            bot (List): 机器人响应列表
+            text (str): 用户输入的文本
+            image (str): 用户上传的图片文件路径
+            video (str): 用户上传的视频文件路径
+
+            返回:
+            Tuple[List, List, str, None, None]: 更新后的历史记录、机器人响应、清空的文本框、清空的图片和视频输入
+            """
             logger.debug("Add text, text: %s, image: %s, video: %s", text, image, video)
+            
             if image:
+                # 处理图片输入
                 buffered = BytesIO()
                 with PIL.Image.open(image) as img:
+                    # 调整图片大小
                     img.thumbnail((500, 500))
                     img.save(buffered, format="JPEG")
+                # 将图片转换为base64编码
                 img_b64_str = base64.b64encode(buffered.getvalue()).decode()
+                # 准备显示内容和消息
                 display_content = f'<img src="data:image/png;base64,{img_b64_str}" alt="user upload image" />\n{text}'
                 message = {
                     "role": "user",
@@ -258,8 +381,9 @@ class GradioInterface:
                     ],
                 }
             elif video:
-
+                # 处理视频输入
                 def video_to_base64(video_path):
+                    """将视频文件转换为base64编码"""
                     with open(video_path, "rb") as video_file:
                         encoded_string = base64.b64encode(video_file.read()).decode(
                             "utf-8"
@@ -267,6 +391,7 @@ class GradioInterface:
                     return encoded_string
 
                 def generate_html_video(video_path):
+                    """生成包含视频的HTML代码"""
                     base64_video = video_to_base64(video_path)
                     video_format = video_path.split(".")[-1]
                     html_code = f"""
@@ -277,6 +402,7 @@ class GradioInterface:
                     """
                     return html_code
 
+                # 准备显示内容和消息
                 display_content = f"{generate_html_video(video)}\n{text}"
                 message = {
                     "role": "user",
@@ -289,17 +415,39 @@ class GradioInterface:
                     ],
                 }
             else:
+                # 处理纯文本输入
                 display_content = text
                 message = {"role": "user", "content": text}
+            
+            # 更新历史记录和机器人响应
             history = history + [message]
             bot = bot + [[display_content, None]]
             return history, bot, "", None, None
 
         def clear_history():
+            """
+            清空聊天历史记录。
+
+            此函数用于重置聊天界面，清除所有历史记录和输入。
+
+            返回:
+            Tuple[List, None, str, None, None]: 空的历史记录、清空的机器人响应、空文本框、清空的图片和视频输入
+            """
             logger.debug("Clear history.")
             return [], None, "", None, None
 
         def update_button(text):
+            """
+            更新发送按钮的状态。
+
+            根据文本框是否有内容来启用或禁用发送按钮。
+
+            参数:
+            text (str): 文本框中的内容
+
+            返回:
+            gr.update: Gradio更新对象，用于更新按钮状态
+            """
             return gr.update(interactive=bool(text))
 
         with gr.Blocks(
@@ -315,6 +463,7 @@ class GradioInterface:
         """,
             analytics_enabled=False,
         ) as chat_vl_interface:
+            # 创建聊天界面的标题和模型信息
             Markdown(
                 f"""
                 <h1 style='text-align: center; margin-bottom: 1rem'>🚀 Xinference Chat Bot : {self.model_name} 🚀</h1>
@@ -337,12 +486,15 @@ class GradioInterface:
                 """
             )
 
+            # 初始化聊天状态
             state = gr.State([])
             with gr.Row():
+                # 创建聊天机器人界面
                 chatbot = gr.Chatbot(
                     elem_id="chatbot", label=self.model_name, height=700, scale=7
                 )
                 with gr.Column(scale=3):
+                    # 创建图片、视频和文本输入框
                     imagebox = gr.Image(type="filepath")
                     videobox = gr.Video()
                     textbox = gr.Textbox(
@@ -350,11 +502,13 @@ class GradioInterface:
                         placeholder="Enter text and press ENTER",
                         container=False,
                     )
+                    # 创建发送和清除按钮
                     submit_btn = gr.Button(
                         value="Send", variant="primary", interactive=False
                     )
                     clear_btn = gr.Button(value="Clear")
 
+            # 创建额外输入选项（折叠面板）
             with gr.Accordion("Additional Inputs", open=False):
                 max_tokens = gr.Slider(
                     minimum=1,
@@ -368,8 +522,10 @@ class GradioInterface:
                 )
                 stream = gr.Checkbox(label="Stream", value=False)
 
+            # 设置文本框变化时更新按钮状态
             textbox.change(update_button, [textbox], [submit_btn], queue=False)
 
+            # 设置文本框提交事件
             textbox.submit(
                 add_text,
                 [state, chatbot, textbox, imagebox, videobox],
@@ -381,6 +537,7 @@ class GradioInterface:
                 [state, chatbot],
             )
 
+            # 设置发送按钮点击事件
             submit_btn.click(
                 add_text,
                 [state, chatbot, textbox, imagebox, videobox],
@@ -404,7 +561,32 @@ class GradioInterface:
     def build_generate_interface(
         self,
     ):
+        """
+        构建生成式模型的交互界面。
+
+        此方法创建一个用于文本生成的 Gradio 界面，包括文本输入、生成控制和历史记录管理。
+
+        返回:
+            gr.Blocks: 配置好的 Gradio 界面对象
+
+        主要功能:
+        1. 创建文本输入和输出区域
+        2. 提供生成、撤销、重试和清除等操作按钮
+        3. 允许用户调整生成参数（如最大标记数和温度）
+        4. 管理生成历史记录
+        """
+
         def undo(text, hist):
+            """
+            撤销上一次操作，恢复到前一个状态。
+
+            参数:
+                text (str): 当前文本框中的内容
+                hist (list): 历史记录列表
+
+            返回:
+                dict: 包含更新后的文本框内容和历史记录的字典
+            """
             if len(hist) == 0:
                 return {
                     textbox: "",
@@ -419,6 +601,16 @@ class GradioInterface:
             }
 
         def clear(text, hist):
+            """
+            清除当前文本并更新历史记录。
+
+            参数:
+                text (str): 当前文本框中的内容
+                hist (list): 历史记录列表
+
+            返回:
+                dict: 包含清空后的文本框内容和更新后的历史记录的字典
+            """
             if len(hist) == 0 or (len(hist) > 0 and text != hist[-1]):
                 hist.append(text)
             hist.append("")
@@ -428,17 +620,33 @@ class GradioInterface:
             }
 
         def complete(text, hist, max_tokens, temperature, lora_name) -> Generator:
+            """
+            生成文本并更新界面。
+
+            参数:
+                text (str): 当前文本框中的内容
+                hist (list): 历史记录列表
+                max_tokens (int): 生成的最大标记数
+                temperature (float): 生成的温度参数
+                lora_name (str): LoRA 模型名称
+
+            返回:
+                Generator: 生成的文本内容和更新后的历史记录
+            """
             from ..client import RESTfulClient
 
+            # 初始化客户端并获取模型
             client = RESTfulClient(self.endpoint)
             client._set_token(self._access_token)
             model = client.get_model(self.model_uid)
             assert isinstance(model, RESTfulGenerateModelHandle)
 
+            # 更新历史记录
             if len(hist) == 0 or (len(hist) > 0 and text != hist[-1]):
                 hist.append(text)
 
             response_content = text
+            # 使用流式生成文本
             for chunk in model.generate(
                 prompt=text,
                 generate_config={
@@ -459,6 +667,7 @@ class GradioInterface:
                         history: hist,
                     }
 
+            # 更新历史记录并返回最终结果
             hist.append(response_content)
             return {  # type: ignore
                 textbox: response_content,
@@ -466,18 +675,34 @@ class GradioInterface:
             }
 
         def retry(text, hist, max_tokens, temperature, lora_name) -> Generator:
+            """
+            重新生成文本，使用历史记录中的前一个输入。
+
+            参数:
+                text (str): 当前文本框中的内容
+                hist (list): 历史记录列表
+                max_tokens (int): 生成的最大标记数
+                temperature (float): 生成的温度参数
+                lora_name (str): LoRA 模型名称
+
+            返回:
+                Generator: 重新生成的文本内容和更新后的历史记录
+            """
             from ..client import RESTfulClient
 
+            # 初始化客户端并获取模型
             client = RESTfulClient(self.endpoint)
             client._set_token(self._access_token)
             model = client.get_model(self.model_uid)
             assert isinstance(model, RESTfulGenerateModelHandle)
 
+            # 更新历史记录并获取前一个输入
             if len(hist) == 0 or (len(hist) > 0 and text != hist[-1]):
                 hist.append(text)
             text = hist[-2] if len(hist) > 1 else ""
 
             response_content = text
+            # 使用流式生成文本
             for chunk in model.generate(
                 prompt=text,
                 generate_config={
@@ -498,12 +723,14 @@ class GradioInterface:
                         history: hist,
                     }
 
+            # 更新历史记录并返回最终结果
             hist.append(response_content)
             return {  # type: ignore
                 textbox: response_content,
                 history: hist,
             }
 
+        # 创建 Gradio 界面
         with gr.Blocks(
             title=f"🚀 Xinference Generate Bot : {self.model_name} 🚀",
             css="""
@@ -517,8 +744,10 @@ class GradioInterface:
             """,
             analytics_enabled=False,
         ) as generate_interface:
+            # 初始化历史记录状态
             history = gr.State([])
 
+            # 添加标题和模型信息
             Markdown(
                 f"""
                 <h1 style='text-align: center; margin-bottom: 1rem'>🚀 Xinference Generate Bot : {self.model_name} 🚀</h1>
@@ -541,7 +770,9 @@ class GradioInterface:
                 """
             )
 
+            # 创建主要界面元素
             with Column(variant="panel"):
+                # 文本输入框
                 textbox = Textbox(
                     container=False,
                     show_label=False,
@@ -551,12 +782,15 @@ class GradioInterface:
                     max_lines=50,
                 )
 
+                # 操作按钮
                 with Row():
                     btn_generate = gr.Button("Generate", variant="primary")
                 with Row():
                     btn_undo = gr.Button("↩️  Undo")
                     btn_retry = gr.Button("🔄  Retry")
                     btn_clear = gr.Button("🗑️  Clear")
+
+                # 附加输入选项（折叠面板）
                 with Accordion("Additional Inputs", open=False):
                     length = gr.Slider(
                         minimum=1,
@@ -570,6 +804,7 @@ class GradioInterface:
                     )
                     lora_name = gr.Text(label="LoRA Name")
 
+                # 设置按钮点击事件
                 btn_generate.click(
                     fn=complete,
                     inputs=[textbox, history, length, temperature, lora_name],

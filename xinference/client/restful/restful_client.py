@@ -58,23 +58,50 @@ def _get_error_string(response: requests.Response) -> str:
         return str(e)
     return "Unknown error"
 
-
 @typing.no_type_check
 def handle_system_prompts(
     chat_history: List["ChatCompletionMessage"], system_prompt: Optional[str]
 ) -> List["ChatCompletionMessage"]:
+    """
+    处理系统提示并更新聊天历史。
+
+    该函数用于管理聊天历史中的系统提示，将所有系统提示合并为一个，并将其放置在聊天历史的开头。
+
+    参数:
+    chat_history (List["ChatCompletionMessage"]): 聊天历史记录，包含多个消息字典。
+    system_prompt (Optional[str]): 可选的新系统提示。
+
+    返回:
+    List["ChatCompletionMessage"]: 更新后的聊天历史记录。
+
+    函数流程:
+    1. 提取历史记录中的所有系统提示。
+    2. 如果提供了新的系统提示，将其添加到系统提示列表中。
+    3. 从聊天历史中移除所有系统提示。
+    4. 将合并后的系统提示作为一个新消息插入到聊天历史的开头。
+
+    注意:
+    - 使用@typing.no_type_check装饰器来禁用类型检查，可能是为了避免与"ChatCompletionMessage"类型相关的问题。
+    - 函数假设每个消息都是一个字典，包含"role"和"content"键。
+    """
+    # 从聊天历史中提取所有系统提示的内容
     history_system_prompts = [
         ch["content"] for ch in chat_history if ch["role"] == "system"
     ]
+    
+    # 如果提供了新的系统提示，将其添加到系统提示列表中
     if system_prompt is not None:
         history_system_prompts.append(system_prompt)
 
-    # remove all the system prompt in the chat_history
+    # 从聊天历史中移除所有系统提示
     chat_history = list(filter(lambda x: x["role"] != "system", chat_history))
-    # insert all system prompts at the beginning
+    
+    # 将所有系统提示合并为一个，并插入到聊天历史的开头
     chat_history.insert(
         0, {"role": "system", "content": ". ".join(history_system_prompts)}
     )
+    
+    # 返回更新后的聊天历史
     return chat_history
 
 

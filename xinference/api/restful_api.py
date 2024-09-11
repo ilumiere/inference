@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# 导入所需的模块和库
 import asyncio
 import inspect
 import json
@@ -71,15 +72,35 @@ from ..types import (
 from .oauth2.auth_service import AuthService
 from .oauth2.types import LoginUserForm
 
+# 配置日志记录器
 logger = logging.getLogger(__name__)
 
 
-class JSONResponse(StarletteJSONResponse):  # type: ignore # noqa: F811
+# 自定义 JSONResponse 类，用于处理 JSON 响应
+class JSONResponse(StarletteJSONResponse):
+    """
+    自定义 JSONResponse 类，继承自 StarletteJSONResponse。
+    用于处理 JSON 响应，使用自定义的 json_dumps 函数进行 JSON 序列化。
+    """
     def render(self, content: Any) -> bytes:
+        """
+        将内容渲染为 JSON 格式的字节串。
+        
+        参数:
+            content (Any): 要序列化的内容。
+        
+        返回:
+            bytes: JSON 格式的字节串。
+        """
         return json_dumps(content)
 
 
+# 创建完成请求的模型类
 class CreateCompletionRequest(CreateCompletion):
+    """
+    用于创建完成请求的模型类，继承自 CreateCompletion。
+    定义了请求的结构和示例。
+    """
     class Config:
         schema_extra = {
             "example": {
@@ -89,7 +110,12 @@ class CreateCompletionRequest(CreateCompletion):
         }
 
 
+# 创建嵌入请求的模型类
 class CreateEmbeddingRequest(BaseModel):
+    """
+    用于创建嵌入请求的模型类。
+    定义了请求的结构，包括模型、输入和用户信息。
+    """
     model: str
     input: Union[str, List[str], List[int], List[List[int]]] = Field(
         description="The input to embed."
@@ -104,7 +130,12 @@ class CreateEmbeddingRequest(BaseModel):
         }
 
 
+# 重新排序请求的模型类
 class RerankRequest(BaseModel):
+    """
+    用于重新排序请求的模型类。
+    定义了请求的结构，包括模型、查询、文档列表和其他可选参数。
+    """
     model: str
     query: str
     documents: List[str]
@@ -114,7 +145,12 @@ class RerankRequest(BaseModel):
     max_chunks_per_doc: Optional[int] = None
 
 
+# 文本到图像请求的模型类
 class TextToImageRequest(BaseModel):
+    """
+    用于文本到图像请求的模型类。
+    定义了请求的结构，包括模型、提示、生成数量、响应格式等参数。
+    """
     model: str
     prompt: Union[str, List[str]] = Field(description="The input to embed.")
     n: Optional[int] = 1
@@ -124,7 +160,41 @@ class TextToImageRequest(BaseModel):
     user: Optional[str] = None
 
 
+# Stable Diffusion API 选项请求的模型类
+class SDAPIOptionsRequest(BaseModel):
+    """
+    用于 Stable Diffusion API 选项请求的模型类。
+    定义了请求的结构，包括 SD 模型检查点。
+    """
+    sd_model_checkpoint: Optional[str] = None
+
+
+# Stable Diffusion API 文本到图像请求的模型类
+class SDAPITxt2imgRequst(BaseModel):
+    """
+    用于 Stable Diffusion API 文本到图像请求的模型类。
+    定义了请求的结构，包括模型、提示、负面提示、步骤数等多个参数。
+    """
+    model: Optional[str]
+    prompt: Optional[str] = ""
+    negative_prompt: Optional[str] = ""
+    steps: Optional[int] = None
+    seed: Optional[int] = -1
+    cfg_scale: Optional[float] = 7.0
+    override_settings: Optional[dict] = {}
+    width: Optional[int] = 512
+    height: Optional[int] = 512
+    sampler_name: Optional[str] = None
+    kwargs: Optional[str] = None
+    user: Optional[str] = None
+
+
+# 文本到视频请求的模型类
 class TextToVideoRequest(BaseModel):
+    """
+    用于文本到视频请求的模型类。
+    定义了请求的结构，包括模型、提示、生成数量等参数。
+    """
     model: str
     prompt: Union[str, List[str]] = Field(description="The input to embed.")
     n: Optional[int] = 1
@@ -132,7 +202,12 @@ class TextToVideoRequest(BaseModel):
     user: Optional[str] = None
 
 
+# 语音请求的模型类
 class SpeechRequest(BaseModel):
+    """
+    用于语音请求的模型类。
+    定义了请求的结构，包括模型、输入文本、语音、响应格式等参数。
+    """
     model: str
     input: str
     voice: Optional[str]
@@ -142,13 +217,23 @@ class SpeechRequest(BaseModel):
     kwargs: Optional[str] = None
 
 
+# 注册模型请求的模型类
 class RegisterModelRequest(BaseModel):
+    """
+    用于注册模型请求的模型类。
+    定义了请求的结构，包括模型、工作节点 IP 和持久化选项。
+    """
     model: str
     worker_ip: Optional[str]
     persist: bool
 
 
+# 构建 Gradio 接口请求的模型类（用于文本模型）
 class BuildGradioInterfaceRequest(BaseModel):
+    """
+    用于构建 Gradio 接口请求的模型类（针对文本模型）。
+    定义了请求的结构，包括模型类型、名称、大小、格式等多个属性。
+    """
     model_type: str
     model_name: str
     model_size_in_billions: int
@@ -160,7 +245,12 @@ class BuildGradioInterfaceRequest(BaseModel):
     model_lang: List[str]
 
 
+# 构建 Gradio 图像接口请求的模型类
 class BuildGradioImageInterfaceRequest(BaseModel):
+    """
+    用于构建 Gradio 图像接口请求的模型类。
+    定义了请求的结构，包括模型类型、名称、家族、ID 等多个属性。
+    """
     model_type: str
     model_name: str
     model_family: str
@@ -169,8 +259,12 @@ class BuildGradioImageInterfaceRequest(BaseModel):
     model_revision: str
     model_ability: List[str]
 
-
 class RESTfulAPI:
+    """
+    RESTfulAPI 类用于处理 Xinference 的 RESTful API 请求。
+    该类负责初始化 API 路由、处理认证、管理模型实例等核心功能。
+    """
+
     def __init__(
         self,
         supervisor_address: str,
@@ -178,6 +272,22 @@ class RESTfulAPI:
         port: int,
         auth_config_file: Optional[str] = None,
     ):
+        """
+        初始化 RESTfulAPI 实例。
+
+        参数:
+        - supervisor_address: str, 监督者地址
+        - host: str, API 服务器主机地址
+        - port: int, API 服务器端口
+        - auth_config_file: Optional[str], 认证配置文件路径，默认为 None
+
+        初始化过程:
+        1. 调用父类初始化方法
+        2. 设置基本属性（地址、端口等）
+        3. 初始化监督者和事件收集器引用为 None
+        4. 创建认证服务实例
+        5. 初始化 API 路由器和 FastAPI 应用实例
+        """
         super().__init__()
         self._supervisor_address = supervisor_address
         self._host = host
@@ -189,23 +299,37 @@ class RESTfulAPI:
         self._app = FastAPI()
 
     def is_authenticated(self):
+        """
+        检查是否启用了认证。
+
+        返回:
+        - bool: 如果认证配置存在则返回 True，否则返回 False
+        """
         return False if self._auth_service.config is None else True
 
     @staticmethod
     def handle_request_limit_error(e: Exception):
+        """
+        处理请求限制错误。
+
+        参数:
+        - e: Exception, 捕获的异常
+
+        行为:
+        如果异常消息中包含 "Rate limit reached"，则抛出 429 状态码的 HTTPException
+        """
         if "Rate limit reached" in str(e):
             raise HTTPException(status_code=429, detail=str(e))
 
     async def _get_supervisor_ref(self) -> xo.ActorRefType[SupervisorActor]:
         """
-        获取监督者Actor的引用
+        获取或创建监督者 Actor 的引用。
 
         返回:
-            xo.ActorRefType[SupervisorActor]: 监督者Actor的引用
+        - xo.ActorRefType[SupervisorActor]: 监督者 Actor 的引用
 
-        说明:
-            - 如果监督者引用不存在，则创建一个新的引用
-            - 使用异步方法获取Actor引用
+        行为:
+        如果引用不存在，则创建新的引用并存储
         """
         if self._supervisor_ref is None:
             # 如果监督者引用不存在，创建一个新的引用
@@ -217,14 +341,13 @@ class RESTfulAPI:
 
     async def _get_event_collector_ref(self) -> xo.ActorRefType[EventCollectorActor]:
         """
-        获取事件收集器Actor的引用
+        获取或创建事件收集器 Actor 的引用。
 
         返回:
-            xo.ActorRefType[EventCollectorActor]: 事件收集器Actor的引用
+        - xo.ActorRefType[EventCollectorActor]: 事件收集器 Actor 的引用
 
-        说明:
-            - 如果事件收集器引用不存在，则创建一个新的引用
-            - 使用异步方法获取Actor引用
+        行为:
+        如果引用不存在，则创建新的引用并存储
         """
         if self._event_collector_ref is None:
             # 如果事件收集器引用不存在，创建一个新的引用
@@ -235,6 +358,18 @@ class RESTfulAPI:
         return self._event_collector_ref
 
     async def _report_error_event(self, model_uid: str, content: str):
+        """
+        报告错误事件。
+
+        参数:
+        - model_uid: str, 模型的唯一标识符
+        - content: str, 错误内容
+
+        行为:
+        1. 尝试获取事件收集器引用
+        2. 向事件收集器报告错误事件
+        3. 如果报告失败，记录异常信息
+        """
         try:
             event_collector_ref = await self._get_event_collector_ref()
             await event_collector_ref.report_event(
@@ -251,6 +386,20 @@ class RESTfulAPI:
             )
 
     async def login_for_access_token(self, request: Request) -> JSONResponse:
+        """
+        处理用户登录并生成访问令牌。
+
+        参数:
+        - request: Request, FastAPI 请求对象
+
+        返回:
+        - JSONResponse: 包含访问令牌的 JSON 响应
+
+        行为:
+        1. 解析请求中的登录表单数据
+        2. 调用认证服务生成用户令牌
+        3. 返回包含令牌的 JSON 响应
+        """
         form_data = LoginUserForm.parse_obj(await request.json())
         result = self._auth_service.generate_token_for_user(
             form_data.username, form_data.password
@@ -258,9 +407,33 @@ class RESTfulAPI:
         return JSONResponse(content=result)
 
     async def is_cluster_authenticated(self) -> JSONResponse:
+        """
+        检查集群是否启用了认证。
+
+        返回:
+        - JSONResponse: 包含认证状态的 JSON 响应
+
+        行为:
+        返回一个 JSON 响应，指示集群是否启用了认证
+        """
         return JSONResponse(content={"auth": self.is_authenticated()})
 
     def serve(self, logging_conf: Optional[dict] = None):
+        """
+        启动 RESTful API 服务。
+
+        参数:
+        - logging_conf: Optional[dict], 日志配置，默认为 None
+
+        行为:
+        1. 添加 CORS 中间件
+        2. 设置内部异常处理器
+        3. 添加各种 API 路由，包括内部接口和用户接口
+        4. 根据环境变量决定是否启用指标中间件
+        5. 检查所有路由的返回值类型
+        6. 设置静态文件服务
+        """
+        # 添加 CORS 中间件
         self._app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
@@ -269,6 +442,7 @@ class RESTfulAPI:
             allow_headers=["*"],
         )
 
+        # 设置内部异常处理器
         @self._app.exception_handler(500)
         async def internal_exception_handler(request: Request, exc: Exception):
             logger.exception("Handling request %s failed: %s", request.url, exc)
@@ -276,20 +450,31 @@ class RESTfulAPI:
                 status_code=500, content=f"Internal Server Error: {exc}"
             )
 
-        # internal interface
+        # 内部接口路由配置
+        
+        # 获取服务状态
         self._router.add_api_route("/status", self.get_status, methods=["GET"])
-        # conflict with /v1/models/{model_uid} below, so register this first
+        
+        # 获取内置提示词列表
+        # 注意:此路由需要先于 "/v1/models/{model_uid}" 注册,以避免冲突
         self._router.add_api_route(
             "/v1/models/prompts", self._get_builtin_prompts, methods=["GET"]
         )
+        
+        # 获取内置模型系列列表
         self._router.add_api_route(
             "/v1/models/families", self._get_builtin_families, methods=["GET"]
         )
+        
+        # 列出 vLLM 支持的模型系列
         self._router.add_api_route(
             "/v1/models/vllm-supported",
             self.list_vllm_supported_model_families,
             methods=["GET"],
         )
+        
+        # 获取集群设备信息
+        # 如果启用了认证,则需要管理员权限
         self._router.add_api_route(
             "/v1/cluster/info",
             self.get_cluster_device_info,
@@ -300,6 +485,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 获取集群版本信息
+        # 如果启用了认证,则需要管理员权限
         self._router.add_api_route(
             "/v1/cluster/version",
             self.get_cluster_version,
@@ -310,6 +498,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 获取设备数量
+        # 如果启用了认证,则需要模型列表查看权限
         self._router.add_api_route(
             "/v1/cluster/devices",
             self._get_devices_count,
@@ -320,10 +511,14 @@ class RESTfulAPI:
                 else None
             ),
         )
-        # 获取supervisor的地址
+        
+        # 获取服务地址
         self._router.add_api_route("/v1/address", self.get_address, methods=["GET"])
 
-        # user interface
+        # 用户接口路由配置
+        
+        # 构建 Gradio 界面
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/ui/{model_uid}",
             self.build_gradio_interface,
@@ -334,6 +529,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 构建 Gradio 图像界面
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/ui/images/{model_uid}",
             self.build_gradio_images_interface,
@@ -344,12 +542,19 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 用户登录获取访问令牌
         self._router.add_api_route(
             "/token", self.login_for_access_token, methods=["POST"]
         )
+        
+        # 检查集群是否启用认证
         self._router.add_api_route(
             "/v1/cluster/auth", self.is_cluster_authenticated, methods=["GET"]
         )
+        
+        # 根据模型名称查询引擎
+        # 如果启用了认证,则需要模型列表查看权限
         self._router.add_api_route(
             "/v1/engines/{model_name}",
             self.query_engines_by_model_name,
@@ -360,7 +565,9 @@ class RESTfulAPI:
                 else None
             ),
         )
-        # running instances
+        
+        # 获取运行实例信息
+        # 如果启用了认证,则需要模型列表查看权限
         self._router.add_api_route(
             "/v1/models/instances",
             self.get_instance_info,
@@ -371,6 +578,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 获取模型版本列表
+        # 如果启用了认证,则需要模型列表查看权限
         # http://127.0.0.1:9997/v1/models/vllm/qwen2-instruct/versions
         self._router.add_api_route(
             "/v1/models/{model_type}/{model_name}/versions",
@@ -382,6 +592,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 列出所有模型
+        # 如果启用了认证,则需要模型列表查看权限
         self._router.add_api_route(
             "/v1/models",
             self.list_models,
@@ -393,6 +606,8 @@ class RESTfulAPI:
             ),
         )
 
+        # 描述特定模型
+        # 如果启用了认证,则需要模型列表查看权限
         self._router.add_api_route(
             "/v1/models/{model_uid}",
             self.describe_model,
@@ -403,6 +618,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 获取模型事件
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/models/{model_uid}/events",
             self.get_model_events,
@@ -413,6 +631,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 中止特定请求
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/models/{model_uid}/requests/{request_id}/abort",
             self.abort_request,
@@ -423,6 +644,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 根据版本启动模型实例
+        # 如果启用了认证,则需要模型启动权限
         self._router.add_api_route(
             "/v1/models/instance",
             self.launch_model_by_version,
@@ -433,6 +657,8 @@ class RESTfulAPI:
                 else None
             ),
         )
+        # 启动模型实例
+        # 如果启用了认证,则需要模型启动权限
         self._router.add_api_route(
             "/v1/models",
             self.launch_model,
@@ -443,6 +669,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 终止模型实例
+        # 如果启用了认证,则需要模型停止权限
         self._router.add_api_route(
             "/v1/models/{model_uid}",
             self.terminate_model,
@@ -453,6 +682,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 创建文本补全
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/completions",
             self.create_completion,
@@ -464,6 +696,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 创建文本嵌入
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/embeddings",
             self.create_embedding,
@@ -474,6 +709,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 重新排序
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/rerank",
             self.rerank,
@@ -484,6 +722,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 创建音频转录
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/audio/transcriptions",
             self.create_transcriptions,
@@ -494,6 +735,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 创建音频翻译
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/audio/translations",
             self.create_translations,
@@ -504,6 +748,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 创建语音
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/audio/speech",
             self.create_speech,
@@ -514,6 +761,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 生成图像
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/images/generations",
             self.create_images,
@@ -525,6 +775,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 创建图像变体
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/images/variations",
             self.create_variations,
@@ -536,6 +789,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # 创建图像修复
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/images/inpainting",
             self.create_inpainting,
@@ -547,6 +803,36 @@ class RESTfulAPI:
                 else None
             ),
         )
+        
+        # SD WebUI API 选项
+        # 如果启用了认证,则需要模型读取权限
+        self._router.add_api_route(
+            "/sdapi/v1/options",
+            self.sdapi_options,
+            methods=["POST"],
+            dependencies=(
+                [Security(self._auth_service, scopes=["models:read"])]
+                if self.is_authenticated()
+                else None
+            ),
+        )
+        
+        # SD WebUI API 文本到图像
+        # 如果启用了认证,则需要模型读取权限
+        self._router.add_api_route(
+            "/sdapi/v1/txt2img",
+            self.sdapi_txt2img,
+            methods=["POST"],
+            response_model=SDAPITxt2imgResult,
+            dependencies=(
+                [Security(self._auth_service, scopes=["models:read"])]
+                if self.is_authenticated()
+                else None
+            ),
+        )
+        
+        # 生成视频
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/video/generations",
             self.create_videos,
@@ -558,6 +844,8 @@ class RESTfulAPI:
                 else None
             ),
         )
+        # 创建聊天补全
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/chat/completions",
             self.create_chat_completion,
@@ -569,6 +857,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 创建灵活推理
+        # 如果启用了认证,则需要模型读取权限
         self._router.add_api_route(
             "/v1/flexible/infers",
             self.create_flexible_infer,
@@ -580,7 +871,10 @@ class RESTfulAPI:
             ),
         )
 
-        # for custom models
+        # 自定义模型相关路由
+
+        # 注册模型
+        # 如果启用了认证,则需要模型注册权限
         self._router.add_api_route(
             "/v1/model_registrations/{model_type}",
             self.register_model,
@@ -591,6 +885,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 注销模型
+        # 如果启用了认证,则需要模型注销权限
         self._router.add_api_route(
             "/v1/model_registrations/{model_type}/{model_name}",
             self.unregister_model,
@@ -601,6 +898,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 列出模型注册信息
+        # 如果启用了认证,则需要模型列表查看权限
         self._router.add_api_route(
             "/v1/model_registrations/{model_type}",
             self.list_model_registrations,
@@ -611,6 +911,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 获取特定模型的注册信息
+        # 如果启用了认证,则需要模型列表查看权限
         self._router.add_api_route(
             "/v1/model_registrations/{model_type}/{model_name}",
             self.get_model_registrations,
@@ -621,6 +924,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 列出缓存的模型
+        # 如果启用了认证,则需要缓存列表查看权限
         self._router.add_api_route(
             "/v1/cache/models",
             self.list_cached_models,
@@ -631,6 +937,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 列出模型文件
+        # 如果启用了认证,则需要缓存列表查看权限
         self._router.add_api_route(
             "/v1/cache/models/files",
             self.list_model_files,
@@ -641,6 +950,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 确认并移除模型
+        # 如果启用了认证,则需要缓存删除权限
         self._router.add_api_route(
             "/v1/cache/models",
             self.confirm_and_remove_model,
@@ -651,6 +963,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 获取工作节点信息
+        # 如果启用了认证,则需要管理员权限
         self._router.add_api_route(
             "/v1/workers",
             self.get_workers_info,
@@ -661,6 +976,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 获取监督节点信息
+        # 如果启用了认证,则需要管理员权限
         self._router.add_api_route(
             "/v1/supervisor",
             self.get_supervisor_info,
@@ -671,6 +989,9 @@ class RESTfulAPI:
                 else None
             ),
         )
+
+        # 中止集群
+        # 如果启用了认证,则需要管理员权限
         self._router.add_api_route(
             "/v1/clusters",
             self.abort_cluster,
@@ -682,15 +1003,16 @@ class RESTfulAPI:
             ),
         )
 
+        # 根据环境变量决定是否启用指标中间件
         if XINFERENCE_DISABLE_METRICS:
+            # 如果禁用指标,则记录日志并直接包含路由
             logger.info(
                 "Supervisor metrics is disabled due to the environment XINFERENCE_DISABLE_METRICS=1"
             )
             self._app.include_router(self._router)
         else:
-            # Clear the global Registry for the MetricsMiddleware, or
-            # the MetricsMiddleware will register duplicated metrics if the port
-            # conflict (This serve method run more than once).
+            # 如果启用指标,则清除全局注册表,添加指标中间件和路由
+            # 清除全局注册表是为了避免端口冲突时重复注册指标
             REGISTRY.clear()
             self._app.add_middleware(MetricsMiddleware)
             self._app.include_router(self._router)
@@ -710,13 +1032,14 @@ class RESTfulAPI:
                         (router.path, router.endpoint, return_annotation)
                     )
         except Exception:
-            pass  # In case that some Python version does not have __annotations__
+            pass  # 某些 Python 版本可能没有 __annotations__
         if invalid_routes:
             raise Exception(
-                f"The return value type of the following routes is not Response:\n"
+                f"以下路由的返回值类型不是 Response:\n"
                 f"{pprint.pformat(invalid_routes)}"
             )
 
+        # 定义用于处理单页应用的静态文件类
         class SPAStaticFiles(StaticFiles):
             async def get_response(self, path: str, scope):
                 response = await super().get_response(path, scope)
@@ -724,16 +1047,17 @@ class RESTfulAPI:
                     response = await super().get_response(".", scope)
                 return response
 
+        # 尝试定位 UI 文件
         try:
             package_file_path = __import__("xinference").__file__
             assert package_file_path is not None
             lib_location = os.path.abspath(os.path.dirname(package_file_path))
             ui_location = os.path.join(lib_location, "web/ui/build/")
         except ImportError as e:
-            raise ImportError(f"Xinference is imported incorrectly: {e}")
+            raise ImportError(f"Xinference 导入不正确: {e}")
 
+        # 如果 UI 文件存在,设置相关路由
         if os.path.exists(ui_location):
-
             @self._app.get("/")
             def read_main():
                 response = RedirectResponse(url="/ui/")
@@ -744,6 +1068,7 @@ class RESTfulAPI:
                 SPAStaticFiles(directory=ui_location, html=True),
             )
         else:
+            # 如果 UI 文件不存在,发出警告
             warnings.warn(
                 f"""
             Xinference ui is not built at expected directory: {ui_location}
@@ -752,6 +1077,7 @@ class RESTfulAPI:
             """
             )
 
+        # 配置并运行服务器
         config = Config(
             app=self._app, host=self._host, port=self._port, log_config=logging_conf
         )
@@ -760,7 +1086,13 @@ class RESTfulAPI:
 
     async def _get_builtin_prompts(self) -> JSONResponse:
         """
-        For internal usage
+        获取内置提示词列表
+        
+        返回:
+            JSONResponse: 包含内置提示词数据的 JSON 响应
+        
+        异常:
+            HTTPException: 如果获取过程中发生错误,则抛出 500 状态码的异常
         """
         try:
             data = await (await self._get_supervisor_ref()).get_builtin_prompts()
@@ -771,7 +1103,13 @@ class RESTfulAPI:
 
     async def _get_builtin_families(self) -> JSONResponse:
         """
-        For internal usage
+        获取内置模型系列列表
+        
+        返回:
+            JSONResponse: 包含内置模型系列数据的 JSON 响应
+        
+        异常:
+            HTTPException: 如果获取过程中发生错误,则抛出 500 状态码的异常
         """
         try:
             data = await (await self._get_supervisor_ref()).get_builtin_families()
@@ -782,7 +1120,13 @@ class RESTfulAPI:
 
     async def _get_devices_count(self) -> JSONResponse:
         """
-        For internal usage
+        获取设备数量
+        
+        返回:
+            JSONResponse: 包含设备数量数据的 JSON 响应
+        
+        异常:
+            HTTPException: 如果获取过程中发生错误,则抛出 500 状态码的异常
         """
         try:
             # 从监督者获取设备数量数据
@@ -795,13 +1139,13 @@ class RESTfulAPI:
             raise HTTPException(status_code=500, detail=str(e))
     async def get_status(self) -> JSONResponse:
         """
-        获取系统状态的异步方法
-
+        获取服务状态
+        
         返回:
-            JSONResponse: 包含系统状态信息的JSON响应
-
+            JSONResponse: 包含服务状态数据的 JSON 响应
+        
         异常:
-            HTTPException: 当发生错误时抛出，状态码为500
+            HTTPException: 如果获取过程中发生错误,则抛出 500 状态码的异常
         """
         try:
             # 从监督者获取状态数据
@@ -816,13 +1160,13 @@ class RESTfulAPI:
 
     async def list_models(self) -> JSONResponse:
         """
-        获取所有运行中的模型信息。
-
+        列出所有可用模型
+        
         返回:
-            JSONResponse: 包含所有运行中模型信息的JSON响应
-
+            JSONResponse: 包含模型列表的 JSON 响应,每个模型包含 id、object、created、owned_by 等信息
+        
         异常:
-            HTTPException: 当发生错误时抛出，状态码为500
+            HTTPException: 如果获取过程中发生错误,则抛出 500 状态码的异常
         """
         try:
             models = await (await self._get_supervisor_ref()).list_models()
@@ -850,33 +1194,50 @@ class RESTfulAPI:
         描述指定模型的详细信息。
 
         参数:
-            model_uid (str): 模型的唯一标识符
+            model_uid (str): 模型的唯一标识符。
 
         返回:
-            JSONResponse: 包含模型详细信息的JSON响应
+            JSONResponse: 包含模型详细信息的 JSON 响应。
 
         异常:
             HTTPException: 
-                - 当模型不存在时，抛出400错误
-                - 当发生其他异常时，抛出500错误
+                - 400 状态码: 如果提供的 model_uid 无效。
+                - 500 状态码: 如果在获取模型信息过程中发生其他错误。
         """
         try:
-            # 通过监督者获取模型描述
+            # 通过 supervisor 获取模型的详细信息
             data = await (await self._get_supervisor_ref()).describe_model(model_uid)
             # 返回模型描述的JSON响应
             return JSONResponse(content=data)
         except ValueError as ve:
-            # 记录错误日志并抛出400错误，通常是因为模型不存在
+            # 捕获并处理无效的 model_uid 错误
             logger.error(str(ve), exc_info=True)
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
-            # 记录错误日志并抛出500错误，用于处理其他未预期的异常
+            # 捕获并处理其他类型的错误
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
     async def launch_model(
         self, request: Request, wait_ready: bool = Query(True)
     ) -> JSONResponse:
+        """
+        启动一个新的模型实例。
+
+        参数:
+            request (Request): FastAPI 请求对象，包含模型启动所需的参数。
+            wait_ready (bool): 是否等待模型准备就绪，默认为 True。
+
+        返回:
+            JSONResponse: 包含启动的模型 UID 的 JSON 响应。
+
+        异常:
+            HTTPException: 
+                - 400 状态码: 如果请求参数无效。
+                - 503 状态码: 如果模型启动过程中发生运行时错误。
+                - 500 状态码: 如果发生其他类型的错误。
+        """
+        # 从请求中提取模型参数
         payload = await request.json()
         model_uid = payload.get("model_uid")
         model_name = payload.get("model_name")
@@ -894,6 +1255,7 @@ class RESTfulAPI:
         download_hub = payload.get("download_hub", None)
         model_path = payload.get("model_path", None)
 
+        # 定义需要排除的键
         exclude_keys = {
             "model_uid",
             "model_name",
@@ -912,10 +1274,12 @@ class RESTfulAPI:
             "model_path",
         }
 
+        # 构建额外参数字典
         kwargs = {
             key: value for key, value in payload.items() if key not in exclude_keys
         }
 
+        # 验证必要参数
         if not model_name:
             raise HTTPException(
                 status_code=400,
@@ -927,6 +1291,7 @@ class RESTfulAPI:
                 detail="Invalid input. Please specify the `model_engine` field.",
             )
 
+        # 处理 GPU 索引
         if isinstance(gpu_idx, int):
             gpu_idx = [gpu_idx]
         if gpu_idx:
@@ -936,12 +1301,14 @@ class RESTfulAPI:
                     detail="Invalid input. Allocated gpu must be a multiple of replica.",
                 )
 
+        # 处理 PEFT 模型配置
         if peft_model_config is not None:
             peft_model_config = PeftModelConfig.from_dict(peft_model_config)
         else:
             peft_model_config = None
 
         try:
+            # 通过 supervisor 启动内置模型
             model_uid = await (await self._get_supervisor_ref()).launch_builtin_model(
                 model_uid=model_uid,
                 model_name=model_name,
@@ -962,15 +1329,19 @@ class RESTfulAPI:
                 **kwargs,
             )
         except ValueError as ve:
+            # 处理参数验证错误
             logger.error(str(ve), exc_info=True)
             raise HTTPException(status_code=400, detail=str(ve))
         except RuntimeError as re:
+            # 处理运行时错误
             logger.error(str(re), exc_info=True)
             raise HTTPException(status_code=503, detail=str(re))
         except Exception as e:
+            # 处理其他类型的错误
             logger.error(str(e), exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
+        # 返回启动的模型 UID
         return JSONResponse(content={"model_uid": model_uid})
 
     async def get_instance_info(
@@ -978,18 +1349,48 @@ class RESTfulAPI:
         model_name: Optional[str] = Query(None),
         model_uid: Optional[str] = Query(None),
     ) -> JSONResponse:
+        """
+        获取模型实例的信息。
+
+        参数:
+            model_name (Optional[str]): 模型名称，可选。
+            model_uid (Optional[str]): 模型的唯一标识符，可选。
+
+        返回:
+            JSONResponse: 包含模型实例信息的 JSON 响应。
+
+        异常:
+            HTTPException: 
+                - 500 状态码: 如果在获取实例信息过程中发生错误。
+        """
         try:
+            # 通过 supervisor 获取实例信息
             infos = await (await self._get_supervisor_ref()).get_instance_info(
                 model_name, model_uid
             )
         except Exception as e:
+            # 处理获取实例信息过程中的错误
             logger.error(str(e), exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
         return JSONResponse(content=infos)
     async def launch_model_by_version(
         self, request: Request, wait_ready: bool = Query(True)
     ) -> JSONResponse:
-        # 从请求中解析JSON数据
+        """
+        根据版本启动模型实例。
+
+        参数:
+            request (Request): FastAPI 请求对象，包含模型启动所需的参数。
+            wait_ready (bool): 是否等待模型准备就绪，默认为 True。
+
+        返回:
+            JSONResponse: 包含启动的模型 UID 的 JSON 响应。
+
+        异常:
+            HTTPException: 
+                - 500 状态码: 如果在启动模型过程中发生错误。
+        """
+        # 从请求中提取模型参数
         payload = await request.json()
         
         # 获取模型相关参数
@@ -1001,7 +1402,7 @@ class RESTfulAPI:
         n_gpu = payload.get("n_gpu", "auto")  # 默认值为"auto"
 
         try:
-            # 调用supervisor启动指定版本的模型
+            # 通过 supervisor 根据版本启动模型
             model_uid = await (
                 await self._get_supervisor_ref()
             ).launch_model_by_version(
@@ -1014,7 +1415,7 @@ class RESTfulAPI:
                 wait_ready=wait_ready,
             )
         except Exception as e:
-            # 记录错误日志并抛出HTTP 500异常
+            # 处理启动过程中的错误
             logger.error(str(e), exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
         
@@ -1024,12 +1425,28 @@ class RESTfulAPI:
     async def get_model_versions(
         self, model_type: str, model_name: str
     ) -> JSONResponse:
+        """
+        获取指定模型类型和名称的所有版本信息。
+
+        参数:
+            model_type (str): 模型类型。
+            model_name (str): 模型名称。
+
+        返回:
+            JSONResponse: 包含模型版本信息的 JSON 响应。
+
+        异常:
+            HTTPException: 
+                - 500 状态码: 如果在获取模型版本信息过程中发生错误。
+        """
         try:
+            # 通过 supervisor 获取模型版本信息
             content = await (await self._get_supervisor_ref()).get_model_versions(
                 model_type, model_name
             )
             return JSONResponse(content=content)
         except Exception as e:
+            # 处理获取版本信息过程中的错误
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -1040,19 +1457,23 @@ class RESTfulAPI:
         Separate build_interface with launch_model
         build_interface requires RESTful Client for API calls
         but calling API in async function does not return
-        构建Gradio界面并将其挂载到FastAPI应用程序上。
+        
+        为指定的模型构建 Gradio 接口。
 
         参数:
-            model_uid (str): 模型的唯一标识符
-            request (Request): FastAPI请求对象
+            model_uid (str): 模型的唯一标识符。
+            request (Request): FastAPI 请求对象，包含构建接口所需的参数。
 
         返回:
-            JSONResponse: 包含模型UID的JSON响应
+            JSONResponse: 包含构建的模型 UID 的 JSON 响应。
 
-        说明:
-            - 该方法分离了构建界面和启动模型的过程
-            - 构建界面需要RESTful客户端进行API调用
-            - 在异步函数中调用API不会返回结果
+        异常:
+            HTTPException: 
+                - 400 状态码: 如果请求参数无效。
+                - 500 状态码: 如果在构建接口过程中发生其他错误。
+
+        注意:
+            此方法需要单独的 RESTful 客户端进行 API 调用，因为在异步函数中调用 API 不会返回结果。
         """
         # 解析请求体
         payload = await request.json()
@@ -1075,11 +1496,11 @@ class RESTfulAPI:
         from ..core.chat_interface import GradioInterface
 
         try:
-            # 获取访问令牌和内部主机地址
+            # 获取访问令牌并设置内部主机
             access_token = request.headers.get("Authorization")
             internal_host = "localhost" if self._host == "0.0.0.0" else self._host
             
-            # 创建GradioInterface实例并构建界面
+            # 构建 Gradio 接口
             interface = GradioInterface(
                 endpoint=f"http://{internal_host}:{self._port}",
                 model_uid=model_uid,
@@ -1095,15 +1516,14 @@ class RESTfulAPI:
                 access_token=access_token,
             ).build()
             
-            # 将Gradio应用挂载到FastAPI应用
+            # 将 Gradio 应用挂载到 FastAPI 应用
             gr.mount_gradio_app(self._app, interface, f"/{model_uid}")
         except ValueError as ve:
-            # 处理参数错误
+            # 处理参数验证错误
             logger.error(str(ve), exc_info=True)
             raise HTTPException(status_code=400, detail=str(ve))
-
         except Exception as e:
-            # 处理其他异常
+            # 处理其他类型的错误
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -1114,8 +1534,21 @@ class RESTfulAPI:
         self, model_uid: str, request: Request
     ) -> JSONResponse:
         """
-        Build a Gradio interface for image processing models.
+        为图像处理模型构建 Gradio 接口。
+
+        参数:
+            model_uid (str): 模型的唯一标识符。
+            request (Request): FastAPI 请求对象，包含构建接口所需的参数。
+
+        返回:
+            JSONResponse: 包含模型 UID 的 JSON 响应。
+
+        异常:
+            HTTPException: 
+                - 400 状态码: 如果请求参数无效。
+                - 500 状态码: 如果在构建接口过程中发生其他错误。
         """
+        # 解析请求体并验证模型类型
         payload = await request.json()
         body = BuildGradioImageInterfaceRequest.parse_obj(payload)
         assert self._app is not None
@@ -1136,8 +1569,11 @@ class RESTfulAPI:
         from ..core.image_interface import ImageInterface
 
         try:
+            # 获取访问令牌并设置内部主机
             access_token = request.headers.get("Authorization")
             internal_host = "localhost" if self._host == "0.0.0.0" else self._host
+            
+            # 构建图像接口
             interface = ImageInterface(
                 endpoint=f"http://{internal_host}:{self._port}",
                 model_uid=model_uid,
@@ -1150,21 +1586,40 @@ class RESTfulAPI:
                 model_ability=body.model_ability,
             ).build()
 
+            # 将 Gradio 应用挂载到 FastAPI 应用
             gr.mount_gradio_app(self._app, interface, f"/{model_uid}")
         except ValueError as ve:
+            # 处理参数验证错误
             logger.error(str(ve), exc_info=True)
             raise HTTPException(status_code=400, detail=str(ve))
-
         except Exception as e:
+            # 处理其他类型的错误
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
         return JSONResponse(content={"model_uid": model_uid})
 
     async def terminate_model(self, model_uid: str) -> JSONResponse:
+        """
+        终止指定的模型实例。
+
+        参数:
+            model_uid (str): 要终止的模型的唯一标识符。
+
+        返回:
+            JSONResponse: 空内容的 JSON 响应，表示操作成功。
+
+        异常:
+            HTTPException: 
+                - 400 状态码: 如果提供的 model_uid 无效。
+                - 500 状态码: 如果在终止模型过程中发生其他错误。
+        """
         try:
             assert self._app is not None
+            # 通过 supervisor 终止模型
             await (await self._get_supervisor_ref()).terminate_model(model_uid)
+            
+            # 从 FastAPI 应用中移除相关的路由
             self._app.router.routes = [
                 route
                 for route in self._app.router.routes
@@ -1175,19 +1630,45 @@ class RESTfulAPI:
                 )
             ]
         except ValueError as ve:
+            # 处理无效的 model_uid 错误
             logger.error(str(ve), exc_info=True)
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他类型的错误
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
         return JSONResponse(content=None)
 
     async def get_address(self) -> JSONResponse:
+        """
+        获取 supervisor 的地址。
+
+        返回:
+            JSONResponse: 包含 supervisor 地址的 JSON 响应。
+        """
         return JSONResponse(content=self._supervisor_address)
 
     async def create_completion(self, request: Request) -> Response:
+        """
+        创建文本补全。
+
+        参数:
+            request (Request): FastAPI 请求对象，包含补全所需的参数。
+
+        返回:
+            Response: 包含补全结果的响应。
+
+        异常:
+            HTTPException: 
+                - 400 状态码: 如果请求参数无效或模型不存在。
+                - 500 状态码: 如果在补全过程中发生其他错误。
+                - 501 状态码: 如果请求了未实现的功能。
+        """
+        # 解析请求体
         raw_body = await request.json()
         body = CreateCompletionRequest.parse_obj(raw_body)
+        
+        # 提取需要的参数
         exclude = {
             "prompt",
             "model",
@@ -1204,25 +1685,28 @@ class RESTfulAPI:
         if body.max_tokens is None:
             kwargs["max_tokens"] = max_tokens_field.default
 
+        # 检查是否使用了未实现的 logit_bias 功能
         if body.logit_bias is not None:
             raise HTTPException(status_code=501, detail="Not implemented")
 
         model_uid = body.model
 
         try:
+            # 获取模型实例
             model = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
-
         except Exception as e:
+            # 处理其他类型的错误
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         if body.stream:
-
+            # 处理流式响应
             async def stream_results():
                 iterator = None
                 try:
@@ -1248,6 +1732,7 @@ class RESTfulAPI:
 
             return EventSourceResponse(stream_results())
         else:
+            # 处理非流式响应
             try:
                 data = await model.generate(body.prompt, kwargs, raw_params=raw_kwargs)
                 return Response(data, media_type="application/json")
@@ -1258,9 +1743,26 @@ class RESTfulAPI:
                 raise HTTPException(status_code=500, detail=str(e))
 
     async def create_embedding(self, request: Request) -> Response:
+        """
+        创建文本嵌入。
+
+        参数:
+            request (Request): FastAPI 请求对象，包含创建嵌入所需的参数。
+
+        返回:
+            Response: 包含嵌入结果的响应。
+
+        异常:
+            HTTPException: 
+                - 400 状态码: 如果请求参数无效或模型不存在。
+                - 500 状态码: 如果在创建嵌入过程中发生其他错误。
+        """
+        # 解析请求体
         payload = await request.json()
         body = CreateEmbeddingRequest.parse_obj(payload)
         model_uid = body.model
+        
+        # 提取需要的参数
         exclude = {
             "model",
             "input",
@@ -1270,33 +1772,56 @@ class RESTfulAPI:
         kwargs = {key: value for key, value in payload.items() if key not in exclude}
 
         try:
+            # 获取模型实例
             model = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他类型的错误
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 创建嵌入
             embedding = await model.create_embedding(body.input, **kwargs)
             return Response(embedding, media_type="application/json")
         except RuntimeError as re:
+            # 处理请求限制错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             self.handle_request_limit_error(re)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他类型的错误
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
     async def rerank(self, request: Request) -> Response:
+        """
+        对文档进行重新排序。
+
+        参数:
+            request (Request): FastAPI 请求对象，包含重新排序所需的参数。
+
+        返回:
+            Response: 包含重新排序结果的响应。
+
+        异常:
+            HTTPException: 
+                - 400 状态码: 如果请求参数无效或模型不存在。
+                - 500 状态码: 如果在重新排序过程中发生其他错误。
+        """
+        # 解析请求体
         payload = await request.json()
         body = RerankRequest.parse_obj(payload)
         model_uid = body.model
+        
+        # 提取额外参数
         kwargs = {
             key: value
             for key, value in payload.items()
@@ -1304,17 +1829,21 @@ class RESTfulAPI:
         }
 
         try:
+            # 获取模型实例
             model = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他类型的错误
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 执行重新排序
             scores = await model.rerank(
                 body.documents,
                 body.query,
@@ -1326,15 +1855,17 @@ class RESTfulAPI:
             )
             return Response(scores, media_type="application/json")
         except RuntimeError as re:
+            # 处理请求限制错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             self.handle_request_limit_error(re)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他类型的错误
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
-
+    # 创建语音转录接口
     async def create_transcriptions(
         self,
         request: Request,
@@ -1346,27 +1877,51 @@ class RESTfulAPI:
         temperature: Optional[float] = Form(0),
         kwargs: Optional[str] = Form(None),
     ) -> Response:
+        """
+        处理语音转录请求的异步方法。
+
+        参数:
+        - request: FastAPI的请求对象
+        - model: 使用的模型标识符
+        - file: 上传的音频文件
+        - language: 音频语言（可选）
+        - prompt: 转录提示（可选）
+        - response_format: 响应格式，默认为json
+        - temperature: 采样温度，默认为0
+        - kwargs: 额外的关键字参数（JSON字符串）
+
+        返回:
+        - Response: 包含转录结果的响应对象
+        """
+        # 从请求表单中获取时间戳粒度参数
         form = await request.form()
         timestamp_granularities = form.get("timestamp_granularities[]")
         if timestamp_granularities:
             timestamp_granularities = [timestamp_granularities]
+        
         model_uid = model
         try:
+            # 获取模型引用
             model_ref = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 解析额外的关键字参数
             if kwargs is not None:
                 parsed_kwargs = json.loads(kwargs)
             else:
                 parsed_kwargs = {}
+            
+            # 执行转录
             transcription = await model_ref.transcriptions(
                 audio=await file.read(),
                 language=language,
@@ -1378,14 +1933,17 @@ class RESTfulAPI:
             )
             return Response(content=transcription, media_type="application/json")
         except RuntimeError as re:
+            # 处理运行时错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
+    # 创建翻译接口
     async def create_translations(
         self,
         request: Request,
@@ -1397,27 +1955,51 @@ class RESTfulAPI:
         temperature: Optional[float] = Form(0),
         kwargs: Optional[str] = Form(None),
     ) -> Response:
+        """
+        处理语音翻译请求的异步方法。
+
+        参数:
+        - request: FastAPI的请求对象
+        - model: 使用的模型标识符
+        - file: 上传的音频文件
+        - language: 目标语言（可选）
+        - prompt: 翻译提示（可选）
+        - response_format: 响应格式，默认为json
+        - temperature: 采样温度，默认为0
+        - kwargs: 额外的关键字参数（JSON字符串）
+
+        返回:
+        - Response: 包含翻译结果的响应对象
+        """
+        # 从请求表单中获取时间戳粒度参数
         form = await request.form()
         timestamp_granularities = form.get("timestamp_granularities[]")
         if timestamp_granularities:
             timestamp_granularities = [timestamp_granularities]
+        
         model_uid = model
         try:
+            # 获取模型引用
             model_ref = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 解析额外的关键字参数
             if kwargs is not None:
                 parsed_kwargs = json.loads(kwargs)
             else:
                 parsed_kwargs = {}
+            
+            # 执行翻译
             translation = await model_ref.translations(
                 audio=await file.read(),
                 language=language,
@@ -1429,14 +2011,17 @@ class RESTfulAPI:
             )
             return Response(content=translation, media_type="application/json")
         except RuntimeError as re:
+            # 处理运行时错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
+    # 创建语音生成接口
     async def create_speech(
         self,
         request: Request,
@@ -1444,30 +2029,51 @@ class RESTfulAPI:
             None, media_type="application/octet-stream"
         ),
     ) -> Response:
+        """
+        处理语音生成请求的异步方法。
+
+        参数:
+        - request: FastAPI的请求对象
+        - prompt_speech: 可选的语音提示文件
+
+        返回:
+        - Response: 包含生成的语音数据的响应对象
+        """
+        # 根据是否有语音提示文件来决定如何解析请求
         if prompt_speech:
             f = await request.form()
         else:
             f = await request.json()
+        
+        # 解析请求体
         body = SpeechRequest.parse_obj(f)
         model_uid = body.model
         try:
+            # 获取模型引用
             model = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 解析额外的关键字参数
             if body.kwargs is not None:
                 parsed_kwargs = json.loads(body.kwargs)
             else:
                 parsed_kwargs = {}
+            
+            # 如果有语音提示文件，将其添加到参数中
             if prompt_speech is not None:
                 parsed_kwargs["prompt_speech"] = await prompt_speech.read()
+            
+            # 执行语音生成
             out = await model.speech(
                 input=body.input,
                 voice=body.voice,
@@ -1476,6 +2082,8 @@ class RESTfulAPI:
                 stream=body.stream,
                 **parsed_kwargs,
             )
+            
+            # 根据是否为流式响应返回不同类型的响应
             if body.stream:
                 return EventSourceResponse(
                     media_type="application/octet-stream", content=out
@@ -1483,31 +2091,50 @@ class RESTfulAPI:
             else:
                 return Response(media_type="application/octet-stream", content=out)
         except RuntimeError as re:
+            # 处理运行时错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             self.handle_request_limit_error(re)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
+    # 创建图像生成接口
     async def create_images(self, request: Request) -> Response:
+        """
+        处理图像生成请求的异步方法。
+
+        参数:
+        - request: FastAPI的请求对象
+
+        返回:
+        - Response: 包含生成的图像数据的响应对象
+        """
+        # 解析请求体
         body = TextToImageRequest.parse_obj(await request.json())
         model_uid = body.model
         try:
+            # 获取模型引用
             model = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 解析额外的关键字参数
             kwargs = json.loads(body.kwargs) if body.kwargs else {}
+            
+            # 执行文本到图像的转换
             image_list = await model.text_to_image(
                 prompt=body.prompt,
                 n=body.n,
@@ -1517,15 +2144,102 @@ class RESTfulAPI:
             )
             return Response(content=image_list, media_type="application/json")
         except RuntimeError as re:
+            # 处理运行时错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             self.handle_request_limit_error(re)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
+    # Stable Diffusion API选项接口
+    async def sdapi_options(self, request: Request) -> Response:
+        """
+        处理Stable Diffusion API选项请求的异步方法。
+
+        参数:
+        - request: FastAPI的请求对象
+
+        返回:
+        - Response: 空响应对象，表示操作成功
+        """
+        # 解析请求体
+        body = SDAPIOptionsRequest.parse_obj(await request.json())
+        model_uid = body.sd_model_checkpoint
+
+        try:
+            # 检查模型是否存在
+            if not model_uid:
+                raise ValueError("Unknown model")
+            await (await self._get_supervisor_ref()).get_model(model_uid)
+            return Response()
+        except ValueError as ve:
+            # 处理模型不存在的错误
+            logger.error(str(ve), exc_info=True)
+            await self._report_error_event(model_uid, str(ve))
+            raise HTTPException(status_code=400, detail=str(ve))
+        except Exception as e:
+            # 处理其他异常
+            logger.error(e, exc_info=True)
+            await self._report_error_event(model_uid, str(e))
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # Stable Diffusion API文本到图像接口
+    async def sdapi_txt2img(self, request: Request) -> Response:
+        """
+        处理Stable Diffusion API文本到图像请求的异步方法。
+
+        参数:
+        - request: FastAPI的请求对象
+
+        返回:
+        - Response: 包含生成的图像数据的响应对象
+        """
+        # 解析请求体
+        body = SDAPITxt2imgRequst.parse_obj(await request.json())
+        model_uid = body.model or body.override_settings.get("sd_model_checkpoint")
+
+        try:
+            # 检查模型是否存在并获取模型引用
+            if not model_uid:
+                raise ValueError("Unknown model")
+            model = await (await self._get_supervisor_ref()).get_model(model_uid)
+        except ValueError as ve:
+            # 处理模型不存在的错误
+            logger.error(str(ve), exc_info=True)
+            await self._report_error_event(model_uid, str(ve))
+            raise HTTPException(status_code=400, detail=str(ve))
+        except Exception as e:
+            # 处理其他异常
+            logger.error(e, exc_info=True)
+            await self._report_error_event(model_uid, str(e))
+            raise HTTPException(status_code=500, detail=str(e))
+
+        try:
+            # 准备参数
+            kwargs = dict(body)
+            kwargs.update(json.loads(body.kwargs) if body.kwargs else {})
+            
+            # 执行文本到图像的转换
+            image_list = await model.txt2img(
+                **kwargs,
+            )
+            return Response(content=image_list, media_type="application/json")
+        except RuntimeError as re:
+            # 处理运行时错误
+            logger.error(re, exc_info=True)
+            await self._report_error_event(model_uid, str(re))
+            self.handle_request_limit_error(re)
+            raise HTTPException(status_code=400, detail=str(re))
+        except Exception as e:
+            # 处理其他异常
+            logger.error(e, exc_info=True)
+            await self._report_error_event(model_uid, str(e))
+            raise HTTPException(status_code=500, detail=str(e))
+    # 图像变体生成接口
     async def create_variations(
         self,
         model: str = Form(...),
@@ -1537,23 +2251,45 @@ class RESTfulAPI:
         size: Optional[str] = Form(None),
         kwargs: Optional[str] = Form(None),
     ) -> Response:
+        """
+        处理图像变体生成请求的异步方法。
+
+        参数:
+        - model: 使用的模型标识符
+        - image: 上传的原始图像文件
+        - prompt: 正向提示词，用于引导图像生成
+        - negative_prompt: 负向提示词，用于避免特定元素出现
+        - n: 生成的图像变体数量
+        - response_format: 响应格式，默认为"url"
+        - size: 生成图像的尺寸
+        - kwargs: 额外的关键字参数（JSON字符串）
+
+        返回:
+        - Response: 包含生成的图像变体数据的响应对象
+        """
         model_uid = model
         try:
+            # 获取模型引用
             model_ref = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 解析额外的关键字参数
             if kwargs is not None:
                 parsed_kwargs = json.loads(kwargs)
             else:
                 parsed_kwargs = {}
+            
+            # 执行图像到图像的转换
             image_list = await model_ref.image_to_image(
                 image=Image.open(image.file),
                 prompt=prompt,
@@ -1565,14 +2301,17 @@ class RESTfulAPI:
             )
             return Response(content=image_list, media_type="application/json")
         except RuntimeError as re:
+            # 处理运行时错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
+    # 图像修复接口
     async def create_inpainting(
         self,
         model: str = Form(...),
@@ -1585,28 +2324,55 @@ class RESTfulAPI:
         size: Optional[str] = Form(None),
         kwargs: Optional[str] = Form(None),
     ) -> Response:
+        """
+        处理图像修复请求的异步方法。
+
+        参数:
+        - model: 使用的模型标识符
+        - image: 上传的原始图像文件
+        - mask_image: 上传的遮罩图像文件
+        - prompt: 正向提示词，用于引导图像修复
+        - negative_prompt: 负向提示词，用于避免特定元素出现
+        - n: 生成的修复图像数量
+        - response_format: 响应格式，默认为"url"
+        - size: 生成图像的尺寸
+        - kwargs: 额外的关键字参数（JSON字符串）
+
+        返回:
+        - Response: 包含修复后的图像数据的响应对象
+        """
         model_uid = model
         try:
+            # 获取模型引用
             model_ref = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 解析额外的关键字参数
             if kwargs is not None:
                 parsed_kwargs = json.loads(kwargs)
             else:
                 parsed_kwargs = {}
+            
+            # 打开原始图像和遮罩图像
             im = Image.open(image.file)
             mask_im = Image.open(mask_image.file)
+            
+            # 如果未指定尺寸，使用原始图像的尺寸
             if not size:
                 w, h = im.size
                 size = f"{w}*{h}"
+            
+            # 执行图像修复
             image_list = await model_ref.inpainting(
                 image=im,
                 mask_image=mask_im,
@@ -1619,64 +2385,102 @@ class RESTfulAPI:
             )
             return Response(content=image_list, media_type="application/json")
         except RuntimeError as re:
+            # 处理运行时错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
+    # 灵活推理接口
     async def create_flexible_infer(self, request: Request) -> Response:
+        """
+        处理灵活推理请求的异步方法。
+
+        参数:
+        - request: FastAPI的请求对象
+
+        返回:
+        - Response: 包含推理结果的响应对象
+        """
+        # 解析请求体
         payload = await request.json()
 
+        # 获取模型标识符
         model_uid = payload.get("model")
 
+        # 排除特定键，构建kwargs字典
         exclude = {
             "model",
         }
         kwargs = {key: value for key, value in payload.items() if key not in exclude}
 
         try:
+            # 获取模型引用
             model = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 执行推理
             result = await model.infer(**kwargs)
             return Response(result, media_type="application/json")
         except RuntimeError as re:
+            # 处理运行时错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             self.handle_request_limit_error(re)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
+    # 视频生成接口
     async def create_videos(self, request: Request) -> Response:
+        """
+        处理文本到视频生成请求的异步方法。
+
+        参数:
+        - request: FastAPI的请求对象
+
+        返回:
+        - Response: 包含生成的视频数据的响应对象
+        """
+        # 解析请求体
         body = TextToVideoRequest.parse_obj(await request.json())
         model_uid = body.model
         try:
+            # 获取模型引用
             model = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 解析额外的关键字参数
             kwargs = json.loads(body.kwargs) if body.kwargs else {}
+            
+            # 执行文本到视频的转换
             video_list = await model.text_to_video(
                 prompt=body.prompt,
                 n=body.n,
@@ -1684,18 +2488,35 @@ class RESTfulAPI:
             )
             return Response(content=video_list, media_type="application/json")
         except RuntimeError as re:
+            # 处理运行时错误
             logger.error(re, exc_info=True)
             await self._report_error_event(model_uid, str(re))
             self.handle_request_limit_error(re)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
     async def create_chat_completion(self, request: Request) -> Response:
+        """
+        创建聊天完成的异步方法。
+
+        参数:
+        - request: FastAPI的请求对象，包含聊天完成所需的参数
+
+        返回:
+        - Response: 包含聊天完成结果的响应对象
+
+        异常:
+        - HTTPException: 当请求参数无效或处理过程中出现错误时抛出
+        """
+        # 解析请求体
         raw_body = await request.json()
         body = CreateChatCompletion.parse_obj(raw_body)
+        
+        # 提取不需要传递给模型的参数
         exclude = {
             "prompt",
             "model",
@@ -1705,6 +2526,7 @@ class RESTfulAPI:
             "logit_bias_type",
             "user",
         }
+        # 构建传递给模型的参数字典
         raw_kwargs = {k: v for k, v in raw_body.items() if k not in exclude}
         kwargs = body.dict(exclude_unset=True, exclude=exclude)
 
@@ -1712,11 +2534,14 @@ class RESTfulAPI:
         if body.max_tokens is None:
             kwargs["max_tokens"] = max_tokens_field.default
 
+        # 检查是否使用了未实现的logit_bias功能
         if body.logit_bias is not None:
             raise HTTPException(status_code=501, detail="Not implemented")
 
+        # 提取消息列表
         messages = body.messages and list(body.messages) or None
 
+        # 验证消息列表的有效性
         if not messages or messages[-1].get("role") not in ["user", "system", "tool"]:
             raise HTTPException(
                 status_code=400, detail="Invalid input. Please specify the prompt."
@@ -1752,27 +2577,34 @@ class RESTfulAPI:
         model_uid = body.model
 
         try:
+            # 获取模型实例
             model = await (await self._get_supervisor_ref()).get_model(model_uid)
         except ValueError as ve:
+            # 处理模型不存在的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
         try:
+            # 获取模型描述
             desc = await (await self._get_supervisor_ref()).describe_model(model_uid)
         except ValueError as ve:
+            # 处理模型描述获取失败的错误
             logger.error(str(ve), exc_info=True)
             await self._report_error_event(model_uid, str(ve))
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             await self._report_error_event(model_uid, str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
+        # 导入工具调用相关的模型家族
         from ..model.llm.utils import GLM4_TOOL_CALL_FAMILY, QWEN_TOOL_CALL_FAMILY
 
         model_family = desc.get("model_family", "")
@@ -1780,6 +2612,7 @@ class RESTfulAPI:
             ["gorilla-openfunctions-v1"] + QWEN_TOOL_CALL_FAMILY + GLM4_TOOL_CALL_FAMILY
         )
 
+        # 检查模型是否支持工具调用
         if model_family not in function_call_models:
             if body.tools:
                 raise HTTPException(
@@ -1791,6 +2624,8 @@ class RESTfulAPI:
                     status_code=400,
                     detail=f"Only {function_call_models} support tool messages",
                 )
+        
+        # 检查是否支持流式工具调用
         if body.tools and body.stream:
             is_vllm = await model.is_vllm_backend()
 
@@ -1805,11 +2640,12 @@ class RESTfulAPI:
                 )
 
         if body.stream:
-
+            # 处理流式响应
             async def stream_results():
                 iterator = None
                 try:
                     try:
+                        # 获取聊天结果迭代器
                         iterator = await model.chat(
                             prompt,
                             system_prompt,
@@ -1818,8 +2654,10 @@ class RESTfulAPI:
                             raw_params=raw_kwargs,
                         )
                     except RuntimeError as re:
+                        # 处理运行时错误
                         await self._report_error_event(model_uid, str(re))
                         self.handle_request_limit_error(re)
+                    # 逐个yield结果
                     async for item in iterator:
                         yield item
                     yield "[DONE]"
@@ -1827,6 +2665,7 @@ class RESTfulAPI:
                 # When the user uses ctrl+c to cancel the streaming chat, asyncio.CancelledError would be triggered.
                 # See https://github.com/sysid/sse-starlette/blob/main/examples/example.py#L48
                 except asyncio.CancelledError:
+                    # 处理用户取消请求
                     logger.info(
                         f"Disconnected from client (via refresh/close) {request.client} during chat."
                     )
@@ -1835,6 +2674,7 @@ class RESTfulAPI:
                     # TODO: Cannot yield here. Yield here would leads to error for the next streaming request.
                     return
                 except Exception as ex:
+                    # 处理其他异常
                     logger.exception("Chat completion stream got an error: %s", ex)
                     await self._report_error_event(model_uid, str(ex))
                     # https://github.com/openai/openai-python/blob/e0aafc6c1a45334ac889fe3e54957d309c3af93f/src/openai/_streaming.py#L107
@@ -1843,7 +2683,9 @@ class RESTfulAPI:
 
             return EventSourceResponse(stream_results())
         else:
+            # 处理非流式响应
             try:
+                # 获取聊天结果
                 data = await model.chat(
                     prompt,
                     system_prompt,
@@ -1853,6 +2695,7 @@ class RESTfulAPI:
                 )
                 return Response(content=data, media_type="application/json")
             except Exception as e:
+                # 处理异常
                 logger.error(e, exc_info=True)
                 await self._report_error_event(model_uid, str(e))
                 self.handle_request_limit_error(e)
@@ -1860,45 +2703,93 @@ class RESTfulAPI:
 
     # TODO quwery_engines_by_model_name
     async def query_engines_by_model_name(self, model_name: str) -> JSONResponse:
+        """
+        根据模型名称查询引擎。
+
+        参数:
+        - model_name: 要查询的模型名称
+
+        返回:
+        - JSONResponse: 包含查询结果的JSON响应
+
+        异常:
+        - HTTPException: 当查询过程中出现错误时抛出
+        """
         try:
+            # 通过supervisor查询引擎
             content = await (
                 await self._get_supervisor_ref()
             ).query_engines_by_model_name(model_name)
             return JSONResponse(content=content)
         except ValueError as re:
+            # 处理值错误
             logger.error(re, exc_info=True)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
     async def register_model(self, model_type: str, request: Request) -> JSONResponse:
+        """
+        注册模型的异步方法。
+
+        参数:
+        - model_type: 模型类型
+        - request: FastAPI的请求对象，包含注册所需的参数
+
+        返回:
+        - JSONResponse: 表示注册成功的空JSON响应
+
+        异常:
+        - HTTPException: 当注册过程中出现错误时抛出
+        """
+        # 解析请求体
         body = RegisterModelRequest.parse_obj(await request.json())
         model = body.model
         worker_ip = body.worker_ip
         persist = body.persist
 
         try:
+            # 通过supervisor注册模型
             await (await self._get_supervisor_ref()).register_model(
                 model_type, model, persist, worker_ip
             )
         except ValueError as re:
+            # 处理值错误
             logger.error(re, exc_info=True)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
         return JSONResponse(content=None)
 
     async def unregister_model(self, model_type: str, model_name: str) -> JSONResponse:
+        """
+        注销模型的异步方法。
+
+        参数:
+        - model_type: 模型类型
+        - model_name: 要注销的模型名称
+
+        返回:
+        - JSONResponse: 表示注销成功的空JSON响应
+
+        异常:
+        - HTTPException: 当注销过程中出现错误时抛出
+        """
         try:
+            # 通过supervisor注销模型
             await (await self._get_supervisor_ref()).unregister_model(
                 model_type, model_name
             )
         except ValueError as re:
+            # 处理值错误
             logger.error(re, exc_info=True)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
         return JSONResponse(content=None)
@@ -1906,36 +2797,82 @@ class RESTfulAPI:
     async def list_model_registrations(
         self, model_type: str, detailed: bool = Query(False)
     ) -> JSONResponse:
+        """
+        列出模型注册信息的异步方法。
+
+        参数:
+        - model_type: 模型类型
+        - detailed: 是否返回详细信息，默认为False
+
+        返回:
+        - JSONResponse: 包含模型注册列表的JSON响应
+
+        异常:
+        - HTTPException: 当列出过程中出现错误时抛出
+        """
         try:
+            # 通过supervisor获取模型注册列表
             data = await (await self._get_supervisor_ref()).list_model_registrations(
                 model_type, detailed=detailed
             )
             return JSONResponse(content=data)
         except ValueError as re:
+            # 处理值错误
             logger.error(re, exc_info=True)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
     async def get_model_registrations(
         self, model_type: str, model_name: str
     ) -> JSONResponse:
+        """
+        获取特定模型注册信息的异步方法。
+
+        参数:
+        - model_type: 模型类型
+        - model_name: 模型名称
+
+        返回:
+        - JSONResponse: 包含特定模型注册信息的JSON响应
+
+        异常:
+        - HTTPException: 当获取过程中出现错误时抛出
+        """
         try:
+            # 通过supervisor获取特定模型的注册信息
             data = await (await self._get_supervisor_ref()).get_model_registration(
                 model_type, model_name
             )
             return JSONResponse(content=data)
         except ValueError as re:
+            # 处理值错误
             logger.error(re, exc_info=True)
             raise HTTPException(status_code=400, detail=str(re))
         except Exception as e:
+            # 处理其他异常
             logger.error(e, exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
+    # RESTfulAPI 类的方法
 
     async def list_cached_models(
         self, model_name: str = Query(None), worker_ip: str = Query(None)
     ) -> JSONResponse:
+        """
+        列出缓存的模型。
+
+        参数:
+            model_name (str, 可选): 模型名称，用于过滤结果。
+            worker_ip (str, 可选): 工作节点IP，用于过滤结果。
+
+        返回:
+            JSONResponse: 包含缓存模型列表的JSON响应。
+
+        异常:
+            HTTPException: 当发生错误时抛出，包括400（客户端错误）和500（服务器错误）。
+        """
         try:
             data = await (await self._get_supervisor_ref()).list_cached_models(
                 model_name, worker_ip
@@ -1953,16 +2890,16 @@ class RESTfulAPI:
 
     async def get_model_events(self, model_uid: str) -> JSONResponse:
         """
-        获取模型事件
+        获取指定模型的事件。
 
         参数:
-            model_uid (str): 模型唯一标识符
+            model_uid (str): 模型的唯一标识符。
 
         返回:
-            JSONResponse: 包含模型事件的JSON响应
+            JSONResponse: 包含模型事件的JSON响应。
 
         异常:
-            HTTPException: 当发生错误时抛出，状态码为500
+            HTTPException: 当发生错误时抛出，包括400（客户端错误）和500（服务器错误）。
         """
         try:
             event_collector_ref = await self._get_event_collector_ref()
@@ -1976,6 +2913,19 @@ class RESTfulAPI:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def abort_request(self, model_uid: str, request_id: str) -> JSONResponse:
+        """
+        中止指定模型的特定请求。
+
+        参数:
+            model_uid (str): 模型的唯一标识符。
+            request_id (str): 请求的唯一标识符。
+
+        返回:
+            JSONResponse: 包含中止操作结果的JSON响应。
+
+        异常:
+            HTTPException: 当发生错误时抛出500（服务器错误）。
+        """
         try:
             supervisor_ref = await self._get_supervisor_ref()
             res = await supervisor_ref.abort_request(model_uid, request_id)
@@ -1985,13 +2935,13 @@ class RESTfulAPI:
             raise HTTPException(status_code=500, detail=str(e))
     async def list_vllm_supported_model_families(self) -> JSONResponse:
         """
-        列出VLLM支持的模型家族
+        列出VLLM支持的模型系列。
 
         返回:
-            JSONResponse: 包含支持的聊天和生成模型列表的JSON响应
+            JSONResponse: 包含支持的聊天和生成模型系列的JSON响应。
 
         异常:
-            HTTPException: 当发生错误时抛出，状态码为500
+            HTTPException: 当发生错误时抛出500（服务器错误）。
         """
         try:
             # 从vllm核心模块导入支持的模型列表
@@ -2016,6 +2966,18 @@ class RESTfulAPI:
     async def get_cluster_device_info(
         self, detailed: bool = Query(False)
     ) -> JSONResponse:
+        """
+        获取集群设备信息。
+
+        参数:
+            detailed (bool, 可选): 是否返回详细信息，默认为False。
+
+        返回:
+            JSONResponse: 包含集群设备信息的JSON响应。
+
+        异常:
+            HTTPException: 当发生错误时抛出500（服务器错误）。
+        """
         try:
             data = await (await self._get_supervisor_ref()).get_cluster_device_info(
                 detailed=detailed
@@ -2044,6 +3006,19 @@ class RESTfulAPI:
     async def list_model_files(
         self, model_version: str = Query(None), worker_ip: str = Query(None)
     ) -> JSONResponse:
+        """
+        列出可删除的模型文件。
+
+        参数:
+            model_version (str, 可选): 模型版本，用于过滤结果。
+            worker_ip (str, 可选): 工作节点IP，用于过滤结果。
+
+        返回:
+            JSONResponse: 包含可删除模型文件列表的JSON响应。
+
+        异常:
+            HTTPException: 当发生错误时抛出，包括400（客户端错误）和500（服务器错误）。
+        """
         try:
             data = await (await self._get_supervisor_ref()).list_deletable_models(
                 model_version, worker_ip
@@ -2064,6 +3039,19 @@ class RESTfulAPI:
     async def confirm_and_remove_model(
         self, model_version: str = Query(None), worker_ip: str = Query(None)
     ) -> JSONResponse:
+        """
+        确认并删除指定的模型。
+
+        参数:
+            model_version (str, 可选): 要删除的模型版本。
+            worker_ip (str, 可选): 执行删除操作的工作节点IP。
+
+        返回:
+            JSONResponse: 包含删除操作结果的JSON响应。
+
+        异常:
+            HTTPException: 当发生错误时抛出，包括400（客户端错误）和500（服务器错误）。
+        """
         try:
             res = await (await self._get_supervisor_ref()).confirm_and_remove_model(
                 model_version=model_version, worker_ip=worker_ip
@@ -2077,6 +3065,15 @@ class RESTfulAPI:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def get_workers_info(self) -> JSONResponse:
+        """
+        获取所有工作节点的信息。
+
+        返回:
+            JSONResponse: 包含工作节点信息的JSON响应。
+
+        异常:
+            HTTPException: 当发生错误时抛出，包括400（客户端错误）和500（服务器错误）。
+        """
         try:
             res = await (await self._get_supervisor_ref()).get_workers_info()
             return JSONResponse(content=res)
@@ -2088,6 +3085,15 @@ class RESTfulAPI:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def get_supervisor_info(self) -> JSONResponse:
+        """
+        获取监督者（supervisor）的信息。
+
+        返回:
+            JSONResponse: 包含监督者信息的JSON响应。
+
+        异常:
+            HTTPException: 当发生错误时抛出，包括400（客户端错误）和500（服务器错误）。
+        """
         try:
             res = await (await self._get_supervisor_ref()).get_supervisor_info()
             return res
@@ -2099,6 +3105,15 @@ class RESTfulAPI:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def abort_cluster(self) -> JSONResponse:
+        """
+        中止整个集群。
+
+        返回:
+            JSONResponse: 包含中止操作结果的JSON响应。
+
+        异常:
+            HTTPException: 当发生错误时抛出，包括400（客户端错误）和500（服务器错误）。
+        """
         import os
         import signal
 
@@ -2121,6 +3136,19 @@ def run(
     logging_conf: Optional[dict] = None,
     auth_config_file: Optional[str] = None,
 ):
+    """
+    运行RESTful API服务。
+
+    参数:
+        supervisor_address (str): 监督者地址。
+        host (str): 主机地址。
+        port (int): 端口号。
+        logging_conf (Optional[dict]): 日志配置，默认为None。
+        auth_config_file (Optional[str]): 认证配置文件路径，默认为None。
+
+    注意:
+        如果指定的端口不可用，且为默认端口，将尝试使用下一个可用端口。
+    """
     logger.info(f"Starting Xinference at endpoint: http://{host}:{port}")
     try:
         api = RESTfulAPI(
@@ -2158,6 +3186,22 @@ def run_in_subprocess(
     logging_conf: Optional[dict] = None,
     auth_config_file: Optional[str] = None,
 ) -> multiprocessing.Process:
+    """
+    在子进程中运行RESTful API服务。
+
+    参数:
+        supervisor_address (str): 监督者地址。
+        host (str): 主机地址。
+        port (int): 端口号。
+        logging_conf (Optional[dict]): 日志配置，默认为None。
+        auth_config_file (Optional[str]): 认证配置文件路径，默认为None。
+
+    返回:
+        multiprocessing.Process: 运行API服务的子进程。
+
+    注意:
+        创建的子进程是守护进程，会随主进程的结束而结束。
+    """
     p = multiprocessing.Process(
         target=run,
         args=(supervisor_address, host, port, logging_conf, auth_config_file),

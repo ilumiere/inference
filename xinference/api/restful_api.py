@@ -160,35 +160,6 @@ class TextToImageRequest(BaseModel):
     user: Optional[str] = None
 
 
-# Stable Diffusion API 选项请求的模型类
-class SDAPIOptionsRequest(BaseModel):
-    """
-    用于 Stable Diffusion API 选项请求的模型类。
-    定义了请求的结构，包括 SD 模型检查点。
-    """
-    sd_model_checkpoint: Optional[str] = None
-
-
-# Stable Diffusion API 文本到图像请求的模型类
-class SDAPITxt2imgRequst(BaseModel):
-    """
-    用于 Stable Diffusion API 文本到图像请求的模型类。
-    定义了请求的结构，包括模型、提示、负面提示、步骤数等多个参数。
-    """
-    model: Optional[str]
-    prompt: Optional[str] = ""
-    negative_prompt: Optional[str] = ""
-    steps: Optional[int] = None
-    seed: Optional[int] = -1
-    cfg_scale: Optional[float] = 7.0
-    override_settings: Optional[dict] = {}
-    width: Optional[int] = 512
-    height: Optional[int] = 512
-    sampler_name: Optional[str] = None
-    kwargs: Optional[str] = None
-    user: Optional[str] = None
-
-
 # 文本到视频请求的模型类
 class TextToVideoRequest(BaseModel):
     """
@@ -804,32 +775,6 @@ class RESTfulAPI:
             ),
         )
         
-        # SD WebUI API 选项
-        # 如果启用了认证,则需要模型读取权限
-        self._router.add_api_route(
-            "/sdapi/v1/options",
-            self.sdapi_options,
-            methods=["POST"],
-            dependencies=(
-                [Security(self._auth_service, scopes=["models:read"])]
-                if self.is_authenticated()
-                else None
-            ),
-        )
-        
-        # SD WebUI API 文本到图像
-        # 如果启用了认证,则需要模型读取权限
-        self._router.add_api_route(
-            "/sdapi/v1/txt2img",
-            self.sdapi_txt2img,
-            methods=["POST"],
-            response_model=SDAPITxt2imgResult,
-            dependencies=(
-                [Security(self._auth_service, scopes=["models:read"])]
-                if self.is_authenticated()
-                else None
-            ),
-        )
         
         # 生成视频
         # 如果启用了认证,则需要模型读取权限

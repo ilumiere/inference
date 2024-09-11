@@ -20,6 +20,35 @@ from ..types import PeftModelConfig
 
 
 class ModelDescription(ABC):
+    """
+    在这段代码中，ABC 是 Python 标准库 abc 模块中的 ABC 类（Abstract Base Class，抽象基类）的缩写。ModelDescription 类继承自 ABC，这表明 ModelDescription 是一个抽象基类。让我解释一下为什么要这样做：
+    抽象基类的作用：
+    定义接口：ABC 用于定义一个接口或者骨架，子类必须实现这个接口。
+    强制实现：它可以强制子类实现某些方法。
+    不能实例化：抽象基类本身不能被实例化。
+    2. 为什么 ModelDescription 继承 ABC：
+    定义通用接口：ModelDescription 定义了所有模型描述类应该具有的通用方法。
+    强制实现某些方法：通过使用 @abstractmethod 装饰器，它要求所有子类必须实现 to_version_info 方法。
+    提供部分实现：它提供了 __init__ 和 to_dict 方法的基本实现或框架。
+    3. 好处：
+    代码规范：确保所有模型描述类都遵循相同的接口。
+    错误预防：如果子类忘记实现必要的方法，在实例化时会引发错误。
+    清晰的设计：明确表示这个类是一个抽象概念，需要被具体的子类实现。
+    示例：
+    Ask
+    总之，继承 ABC 使 ModelDescription 成为一个抽象基类，这有助于定义一个清晰的接口，确保所有派生的模型描述类都遵循相同的结构，同时提供了一定的灵活性来适应不同类型的模型。
+    
+    class ConcreteModelDescription(ModelDescription):
+       def to_version_info(self):
+           # 具体实现
+           return {"version": "1.0", "other_info": "..."}
+       
+       def to_dict(self):
+           # 覆盖基类的实现
+           return {"address": self.address, "devices": self.devices}
+    Args:
+        ABC (_type_): _description_
+    """
     def __init__(
         self,
         address: Optional[str],

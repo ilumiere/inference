@@ -71,16 +71,31 @@ if TYPE_CHECKING:
 logger = getLogger(__name__)
 
 
+# 存储异步启动任务的字典
 ASYNC_LAUNCH_TASKS = {}  # type: ignore
 
 
 def callback_for_async_launch(model_uid: str):
+    """
+    异步启动完成后的回调函数
+    
+    参数:
+    model_uid (str): 模型的唯一标识符
+    """
     ASYNC_LAUNCH_TASKS.pop(model_uid, None)
     logger.debug(f"Model uid: {model_uid} async launch completes.")
 
 
 @dataclass
 class WorkerStatus:
+    """
+    工作节点状态类
+    
+    属性:
+    update_time (float): 最后更新时间
+    failure_remaining_count (int): 剩余允许失败次数
+    status (Dict[str, Union[ResourceStatus, GPUStatus]]): 资源状态
+    """
     update_time: float
     failure_remaining_count: int
     status: Dict[str, Union[ResourceStatus, GPUStatus]]
@@ -88,29 +103,57 @@ class WorkerStatus:
 
 @dataclass
 class ReplicaInfo:
+    """
+    副本信息类
+    
+    属性:
+    replica (int): 副本数量
+    scheduler (Iterator): 调度器
+    """
     replica: int
     scheduler: Iterator
 
 
 class SupervisorActor(xo.StatelessActor):
+    """
+    监督者Actor类，负责管理和监控工作节点
+    """
     def __init__(self):
         super().__init__()
+        # 存储工作节点地址到工作节点Actor引用的映射
         self._worker_address_to_worker: Dict[str, xo.ActorRefType["WorkerActor"]] = {}  # type: ignore
+        # 存储工作节点状态信息
         self._worker_status: Dict[str, WorkerStatus] = {}  # type: ignore
+        # 存储副本模型UID到工作节点Actor引用的映射
         self._replica_model_uid_to_worker: Dict[  # type: ignore
             str, xo.ActorRefType["WorkerActor"]
         ] = {}
+        # 存储模型UID到副本信息的映射
         self._model_uid_to_replica_info: Dict[str, ReplicaInfo] = {}  # type: ignore
+        # 记录启动时间
         self._uptime = None
+        # 用于同步操作的锁
         self._lock = asyncio.Lock()
 
     @classmethod
     def uid(cls) -> str:
+        """
+        返回Actor的唯一标识符
+        """
         return "supervisor"
 
     def _get_worker_ref_by_ip(
         self, ip: str
     ) -> Optional[xo.ActorRefType["WorkerActor"]]:
+        """
+        根据IP地址获取工作节点Actor引用
+        
+        参数:
+        ip (str): 工作节点的IP地址
+        
+        返回:
+        Optional[xo.ActorRefType["WorkerActor"]]: 工作节点Actor引用，如果不存在则返回None
+        """
         for addr, ref in self._worker_address_to_worker.items():
             existing_ip = addr.split(":")[0]
             if existing_ip == ip:
@@ -118,9 +161,11 @@ class SupervisorActor(xo.StatelessActor):
         return None
 
     async def __post_create__(self):
+        # 记录启动时间
         self._uptime = time.time()
+        
+        # 如果未禁用健康检查，则在专用线程中运行 _check_dead_nodes()
         if not XINFERENCE_DISABLE_HEALTH_CHECK:
-            # Run _check_dead_nodes() in a dedicated thread.
             from ..isolation import Isolation
 
             self._isolation = Isolation(asyncio.new_event_loop(), threaded=True)
@@ -128,21 +173,29 @@ class SupervisorActor(xo.StatelessActor):
             asyncio.run_coroutine_threadsafe(
                 self._check_dead_nodes(), loop=self._isolation.loop
             )
+        
+        # 记录 Xinference supervisor 启动日志
         logger.info(f"Xinference supervisor {self.address} started")
+        
+        # 导入所需的 Actor 类
         from .cache_tracker import CacheTrackerActor
         from .status_guard import StatusGuardActor
 
+        # 创建 StatusGuardActor 实例
         self._status_guard_ref: xo.ActorRefType[  # type: ignore
             "StatusGuardActor"
         ] = await xo.create_actor(
             StatusGuardActor, address=self.address, uid=StatusGuardActor.uid()
         )
+        
+        # 创建 CacheTrackerActor 实例
         self._cache_tracker_ref: xo.ActorRefType[  # type: ignore
             "CacheTrackerActor"
         ] = await xo.create_actor(
             CacheTrackerActor, address=self.address, uid=CacheTrackerActor.uid()
         )
 
+        # 导入并创建 EventCollectorActor 实例
         from .event import EventCollectorActor
 
         self._event_collector_ref: xo.ActorRefType[  # type: ignore
@@ -151,6 +204,7 @@ class SupervisorActor(xo.StatelessActor):
             EventCollectorActor, address=self.address, uid=EventCollectorActor.uid()
         )
 
+        # 导入各种模型相关的函数和类
         from ..model.audio import (
             CustomAudioModelFamilyV1,
             generate_audio_description,
@@ -194,6 +248,7 @@ class SupervisorActor(xo.StatelessActor):
             unregister_rerank,
         )
 
+        # 设置自定义注册类型到相应类和函数的映射
         self._custom_register_type_to_cls: Dict[str, Tuple] = {  # type: ignore
             "LLM": (
                 CustomLLMFamilyV1,
@@ -233,7 +288,7 @@ class SupervisorActor(xo.StatelessActor):
             ),
         }
 
-        # record model version
+        # 记录模型版本信息
         model_version_infos: Dict[str, List[Dict]] = {}  # type: ignore
         model_version_infos.update(get_llm_model_descriptions())
         model_version_infos.update(get_embedding_model_descriptions())
@@ -245,13 +300,19 @@ class SupervisorActor(xo.StatelessActor):
             model_version_infos, self.address
         )
 
-        # Windows does not have signal handler
+        # 为非 Windows 系统设置信号处理器
+        # 检查是否为非Windows系统
         if os.name != "nt":
 
+            # 定义异步信号处理函数
             async def signal_handler():
+                # 直接退出程序
                 os._exit(0)
 
+            # 获取当前运行的事件循环
             loop = asyncio.get_running_loop()
+            # 为SIGTERM信号添加处理器
+            # 当收到SIGTERM信号时，创建一个新的任务来执行signal_handler
             loop.add_signal_handler(
                 signal.SIGTERM, lambda: asyncio.create_task(signal_handler())
             )
@@ -361,13 +422,25 @@ class SupervisorActor(xo.StatelessActor):
         }
 
     async def get_devices_count(self) -> int:
+        """
+        获取设备数量的异步方法。
+
+        返回:
+            int: 可用的GPU设备数量。
+
+        说明:
+        - 从device_utils模块导入gpu_count函数。
+        - 如果是本地部署，直接返回gpu_count()的结果。
+        - 如果是分布式部署，选择一个工作节点并返回其设备数量。
+        - 假设每个工作节点有相同数量的GPU卡。
+        """
         from ..device_utils import gpu_count
 
         if self.is_local_deployment():
             print(f"local: deployment:===> !!!")
             return gpu_count()
-        # distributed deployment, choose a worker and return its device_count.
-        # Assume that each worker has the same count of cards.
+        # 分布式部署，选择一个工作节点并返回其设备数量。
+        # 假设每个工作节点有相同数量的GPU卡。
         worker_ref = await self._choose_worker()
         return await worker_ref.get_devices_count()
 
@@ -419,20 +492,30 @@ class SupervisorActor(xo.StatelessActor):
     async def _to_llm_reg(
         self, llm_family: "LLMFamilyV1", is_builtin: bool
     ) -> Dict[str, Any]:
+        # LLM registration"的缩写，表示将LLM模型家族信息转换为注册格式
+        # 从llm模块导入获取缓存状态的函数
         from ..model.llm import get_cache_status
 
+        # 获取模型实例数量
         instance_cnt = await self.get_instance_count(llm_family.model_name)
+        # 获取模型版本数量
         version_cnt = await self.get_model_version_count(llm_family.model_name)
 
         if self.is_local_deployment():
             specs = []
-            # TODO: does not work when the supervisor and worker are running on separate nodes.
+            # TODO: 当supervisor和worker在不同节点上运行时，这段代码不起作用
             for spec in llm_family.model_specs:
+                # 获取每个模型规格的缓存状态
                 cache_status = get_cache_status(llm_family, spec)
+                # 将缓存状态添加到模型规格中
                 specs.append({**spec.dict(), "cache_status": cache_status})
+            # 构建本地部署的结果字典
             res = {**llm_family.dict(), "is_builtin": is_builtin, "model_specs": specs}
         else:
+            # 构建非本地部署的结果字典
             res = {**llm_family.dict(), "is_builtin": is_builtin}
+        
+        # 添加模型版本数量和实例数量到结果字典
         res["model_version_count"] = version_cnt
         res["model_instance_count"] = instance_cnt
         return res
@@ -440,24 +523,40 @@ class SupervisorActor(xo.StatelessActor):
     async def _to_embedding_model_reg(
         self, model_spec: "EmbeddingModelSpec", is_builtin: bool
     ) -> Dict[str, Any]:
+        """
+        将嵌入模型规格转换为注册信息。
+
+        参数:
+        model_spec: 嵌入模型规格
+        is_builtin: 是否为内置模型
+
+        返回:
+        包含模型注册信息的字典
+        """
         from ..model.embedding import get_cache_status
 
+        # 获取模型实例数量
         instance_cnt = await self.get_instance_count(model_spec.model_name)
+        # 获取模型版本数量
         version_cnt = await self.get_model_version_count(model_spec.model_name)
 
         if self.is_local_deployment():
             # TODO: does not work when the supervisor and worker are running on separate nodes.
             cache_status = get_cache_status(model_spec)
+            # 构建包含缓存状态的结果字典
             res = {
                 **model_spec.dict(),
                 "cache_status": cache_status,
                 "is_builtin": is_builtin,
             }
         else:
+            # 如果不是本地部署，构建不包含缓存状态的结果字典
             res = {
                 **model_spec.dict(),
                 "is_builtin": is_builtin,
             }
+        
+        # 添加模型版本数量和实例数量到结果字典
         res["model_version_count"] = version_cnt
         res["model_instance_count"] = instance_cnt
         return res
@@ -465,24 +564,40 @@ class SupervisorActor(xo.StatelessActor):
     async def _to_rerank_model_reg(
         self, model_spec: "RerankModelSpec", is_builtin: bool
     ) -> Dict[str, Any]:
+        """
+        将重排序模型规格转换为注册信息。
+
+        参数:
+        model_spec: 重排序模型规格
+        is_builtin: 是否为内置模型
+
+        返回:
+        包含模型注册信息的字典
+        """
         from ..model.rerank import get_cache_status
 
+        # 获取模型实例数量
         instance_cnt = await self.get_instance_count(model_spec.model_name)
+        # 获取模型版本数量
         version_cnt = await self.get_model_version_count(model_spec.model_name)
 
         if self.is_local_deployment():
             # TODO: does not work when the supervisor and worker are running on separate nodes.
             cache_status = get_cache_status(model_spec)
+            # 构建包含缓存状态的结果字典
             res = {
                 **model_spec.dict(),
                 "cache_status": cache_status,
                 "is_builtin": is_builtin,
             }
         else:
+            # 如果不是本地部署，构建不包含缓存状态的结果字典
             res = {
                 **model_spec.dict(),
                 "is_builtin": is_builtin,
             }
+        
+        # 添加模型版本数量和实例数量到结果字典
         res["model_version_count"] = version_cnt
         res["model_instance_count"] = instance_cnt
         return res
@@ -515,70 +630,89 @@ class SupervisorActor(xo.StatelessActor):
     async def _to_audio_model_reg(
         self, model_family: "AudioModelFamilyV1", is_builtin: bool
     ) -> Dict[str, Any]:
+        # 从音频模型模块导入获取缓存状态的函数
         from ..model.audio import get_cache_status
 
+        # 异步获取模型实例数量
         instance_cnt = await self.get_instance_count(model_family.model_name)
+        # 异步获取模型版本数量
         version_cnt = await self.get_model_version_count(model_family.model_name)
 
         if self.is_local_deployment():
             # TODO: does not work when the supervisor and worker are running on separate nodes.
             cache_status = get_cache_status(model_family)
+            # 构建包含缓存状态的结果字典
             res = {
                 **model_family.dict(),
                 "cache_status": cache_status,
                 "is_builtin": is_builtin,
             }
         else:
+            # 如果不是本地部署，构建不包含缓存状态的结果字典
             res = {
                 **model_family.dict(),
                 "is_builtin": is_builtin,
             }
+        # 添加模型版本数量和实例数量到结果字典
         res["model_version_count"] = version_cnt
         res["model_instance_count"] = instance_cnt
+        # 返回最终的结果字典
         return res
 
     async def _to_video_model_reg(
         self, model_family: "VideoModelFamilyV1", is_builtin: bool
     ) -> Dict[str, Any]:
+        # 从视频模型模块导入获取缓存状态的函数
         from ..model.video import get_cache_status
 
+        # 异步获取模型实例数量
         instance_cnt = await self.get_instance_count(model_family.model_name)
+        # 异步获取模型版本数量
         version_cnt = await self.get_model_version_count(model_family.model_name)
 
         if self.is_local_deployment():
             # TODO: does not work when the supervisor and worker are running on separate nodes.
             cache_status = get_cache_status(model_family)
+            # 构建包含缓存状态的结果字典
             res = {
                 **model_family.dict(),
                 "cache_status": cache_status,
                 "is_builtin": is_builtin,
             }
         else:
+            # 如果不是本地部署，构建不包含缓存状态的结果字典
             res = {
                 **model_family.dict(),
                 "is_builtin": is_builtin,
             }
+        # 添加模型版本数量和实例数量到结果字典
         res["model_version_count"] = version_cnt
         res["model_instance_count"] = instance_cnt
+        # 返回最终的结果字典
         return res
 
     async def _to_flexible_model_reg(
         self, model_spec: "FlexibleModelSpec", is_builtin: bool
     ) -> Dict[str, Any]:
+        # 获取模型实例数量
         instance_cnt = await self.get_instance_count(model_spec.model_name)
+        # 获取模型版本数量
         version_cnt = await self.get_model_version_count(model_spec.model_name)
 
         if self.is_local_deployment():
+            # 如果是本地部署，包含缓存状态信息
             res = {
                 **model_spec.dict(),
                 "cache_status": True,
                 "is_builtin": is_builtin,
             }
         else:
+            # 如果不是本地部署，不包含缓存状态信息
             res = {
                 **model_spec.dict(),
                 "is_builtin": is_builtin,
             }
+        # 添加模型版本数量和实例数量信息
         res["model_version_count"] = version_cnt
         res["model_instance_count"] = instance_cnt
         return res
@@ -587,37 +721,56 @@ class SupervisorActor(xo.StatelessActor):
     async def list_model_registrations(
         self, model_type: str, detailed: bool = False
     ) -> List[Dict[str, Any]]:
+        """
+        列出指定类型的模型注册信息。
+
+        参数:
+        model_type (str): 模型类型
+        detailed (bool): 是否返回详细信息，默认为False
+
+        返回:
+        List[Dict[str, Any]]: 模型注册信息列表
+        """
         def sort_helper(item):
+            """用于排序的辅助函数，按模型名称的小写形式排序"""
             assert isinstance(item["model_name"], str)
             return item.get("model_name").lower()
 
         ret = []
+        # 如果不是本地部署，从所有工作节点获取模型注册信息
         if not self.is_local_deployment():
             workers = list(self._worker_address_to_worker.values())
             for worker in workers:
                 ret.extend(await worker.list_model_registrations(model_type, detailed))
 
+        # 根据不同的模型类型处理
         if model_type == "LLM":
+            # 导入LLM相关模块
             from ..model.llm import BUILTIN_LLM_FAMILIES, get_user_defined_llm_families
 
+            # 处理内置LLM模型
             for family in BUILTIN_LLM_FAMILIES:
                 if detailed:
                     ret.append(await self._to_llm_reg(family, True))
                 else:
                     ret.append({"model_name": family.model_name, "is_builtin": True})
 
+            # 处理用户定义的LLM模型
             for family in get_user_defined_llm_families():
                 if detailed:
                     ret.append(await self._to_llm_reg(family, False))
                 else:
                     ret.append({"model_name": family.model_name, "is_builtin": False})
 
+            # 对结果进行排序并返回
             ret.sort(key=sort_helper)
             return ret
         elif model_type == "embedding":
+            # 导入嵌入模型相关模块
             from ..model.embedding import BUILTIN_EMBEDDING_MODELS
             from ..model.embedding.custom import get_user_defined_embeddings
 
+            # 处理内置嵌入模型
             for model_name, family in BUILTIN_EMBEDDING_MODELS.items():
                 if detailed:
                     ret.append(
@@ -626,6 +779,7 @@ class SupervisorActor(xo.StatelessActor):
                 else:
                     ret.append({"model_name": model_name, "is_builtin": True})
 
+            # 处理用户定义的嵌入模型
             for model_spec in get_user_defined_embeddings():
                 if detailed:
                     ret.append(
@@ -636,18 +790,22 @@ class SupervisorActor(xo.StatelessActor):
                         {"model_name": model_spec.model_name, "is_builtin": False}
                     )
 
+            # 对结果进行排序并返回
             ret.sort(key=sort_helper)
             return ret
         elif model_type == "image":
+            # 导入图像模型相关模块
             from ..model.image import BUILTIN_IMAGE_MODELS
             from ..model.image.custom import get_user_defined_images
 
+            # 处理内置图像模型
             for model_name, family in BUILTIN_IMAGE_MODELS.items():
                 if detailed:
                     ret.append(await self._to_image_model_reg(family, is_builtin=True))
                 else:
                     ret.append({"model_name": model_name, "is_builtin": True})
 
+            # 处理用户定义的图像模型
             for model_spec in get_user_defined_images():
                 if detailed:
                     ret.append(
@@ -658,18 +816,22 @@ class SupervisorActor(xo.StatelessActor):
                         {"model_name": model_spec.model_name, "is_builtin": False}
                     )
 
+            # 对结果进行排序并返回
             ret.sort(key=sort_helper)
             return ret
         elif model_type == "audio":
+            # 导入音频模型相关模块
             from ..model.audio import BUILTIN_AUDIO_MODELS
             from ..model.audio.custom import get_user_defined_audios
 
+            # 处理内置音频模型
             for model_name, family in BUILTIN_AUDIO_MODELS.items():
                 if detailed:
                     ret.append(await self._to_audio_model_reg(family, is_builtin=True))
                 else:
                     ret.append({"model_name": model_name, "is_builtin": True})
 
+            # 处理用户定义的音频模型
             for model_spec in get_user_defined_audios():
                 if detailed:
                     ret.append(
@@ -680,29 +842,36 @@ class SupervisorActor(xo.StatelessActor):
                         {"model_name": model_spec.model_name, "is_builtin": False}
                     )
 
+            # 对结果进行排序并返回
             ret.sort(key=sort_helper)
             return ret
         elif model_type == "video":
+            # 导入视频模型相关模块
             from ..model.video import BUILTIN_VIDEO_MODELS
 
+            # 处理内置视频模型
             for model_name, family in BUILTIN_VIDEO_MODELS.items():
                 if detailed:
                     ret.append(await self._to_video_model_reg(family, is_builtin=True))
                 else:
                     ret.append({"model_name": model_name, "is_builtin": True})
 
+            # 对结果进行排序并返回
             ret.sort(key=sort_helper)
             return ret
         elif model_type == "rerank":
+            # 导入重排序模型相关模块
             from ..model.rerank import BUILTIN_RERANK_MODELS
             from ..model.rerank.custom import get_user_defined_reranks
 
+            # 处理内置重排序模型
             for model_name, family in BUILTIN_RERANK_MODELS.items():
                 if detailed:
                     ret.append(await self._to_rerank_model_reg(family, is_builtin=True))
                 else:
                     ret.append({"model_name": model_name, "is_builtin": True})
 
+            # 处理用户定义的重排序模型
             for model_spec in get_user_defined_reranks():
                 if detailed:
                     ret.append(
@@ -713,13 +882,16 @@ class SupervisorActor(xo.StatelessActor):
                         {"model_name": model_spec.model_name, "is_builtin": False}
                     )
 
+            # 对结果进行排序并返回
             ret.sort(key=sort_helper)
             return ret
         elif model_type == "flexible":
+            # 导入灵活模型相关模块
             from ..model.flexible import get_flexible_models
 
             ret = []
 
+            # 处理灵活模型
             for model_spec in get_flexible_models():
                 if detailed:
                     ret.append(
@@ -730,14 +902,16 @@ class SupervisorActor(xo.StatelessActor):
                         {"model_name": model_spec.model_name, "is_builtin": False}
                     )
 
+            # 对结果进行排序并返回
             ret.sort(key=sort_helper)
             return ret
         else:
-            raise ValueError(f"Unsupported model type: {model_type}")
+            # 如果模型类型不支持，抛出异常
+            raise ValueError(f"不支持的模型类型: {model_type}")
 
     @log_sync(logger=logger)
     async def get_model_registration(self, model_type: str, model_name: str) -> Any:
-        # search in worker first
+        # 首先在工作节点中搜索模型注册信息
         if not self.is_local_deployment():
             workers = list(self._worker_address_to_worker.values())
             for worker in workers:
@@ -745,57 +919,71 @@ class SupervisorActor(xo.StatelessActor):
                 if f is not None:
                     return f
 
+        # 根据不同的模型类型进行处理
         if model_type == "LLM":
+            # 导入LLM相关的模块
             from ..model.llm import BUILTIN_LLM_FAMILIES, get_user_defined_llm_families
 
+            # 在内置和用户定义的LLM家族中搜索
             for f in BUILTIN_LLM_FAMILIES + get_user_defined_llm_families():
                 if f.model_name == model_name:
                     return f
 
-            raise ValueError(f"Model {model_name} not found")
+            raise ValueError(f"模型 {model_name} 未找到")
         elif model_type == "embedding":
+            # 导入嵌入模型相关的模块
             from ..model.embedding import BUILTIN_EMBEDDING_MODELS
             from ..model.embedding.custom import get_user_defined_embeddings
 
+            # 在内置和用户定义的嵌入模型中搜索
             for f in (
                 list(BUILTIN_EMBEDDING_MODELS.values()) + get_user_defined_embeddings()
             ):
                 if f.model_name == model_name:
                     return f
-            raise ValueError(f"Model {model_name} not found")
+            raise ValueError(f"模型 {model_name} 未找到")
         elif model_type == "image":
+            # 导入图像模型相关的模块
             from ..model.image import BUILTIN_IMAGE_MODELS
             from ..model.image.custom import get_user_defined_images
 
+            # 在内置和用户定义的图像模型中搜索
             for f in list(BUILTIN_IMAGE_MODELS.values()) + get_user_defined_images():
                 if f.model_name == model_name:
                     return f
-            raise ValueError(f"Model {model_name} not found")
+            raise ValueError(f"模型 {model_name} 未找到")
         elif model_type == "audio":
+            # 导入音频模型相关的模块
             from ..model.audio import BUILTIN_AUDIO_MODELS
             from ..model.audio.custom import get_user_defined_audios
 
+            # 在内置和用户定义的音频模型中搜索
             for f in list(BUILTIN_AUDIO_MODELS.values()) + get_user_defined_audios():
                 if f.model_name == model_name:
                     return f
-            raise ValueError(f"Model {model_name} not found")
+            raise ValueError(f"模型 {model_name} 未找到")
         elif model_type == "rerank":
+            # 导入重排序模型相关的模块
             from ..model.rerank import BUILTIN_RERANK_MODELS
             from ..model.rerank.custom import get_user_defined_reranks
 
+            # 在内置和用户定义的重排序模型中搜索
             for f in list(BUILTIN_RERANK_MODELS.values()) + get_user_defined_reranks():
                 if f.model_name == model_name:
                     return f
-            raise ValueError(f"Model {model_name} not found")
+            raise ValueError(f"模型 {model_name} 未找到")
         elif model_type == "flexible":
+            # 导入灵活模型相关的模块
             from ..model.flexible import get_flexible_models
 
+            # 在灵活模型中搜索
             for f in get_flexible_models():
                 if f.model_name == model_name:
                     return f
-            raise ValueError(f"Model {model_name} not found")
+            raise ValueError(f"模型 {model_name} 未找到")
         else:
-            raise ValueError(f"Unsupported model type: {model_type}")
+            # 如果模型类型不支持，抛出异常
+            raise ValueError(f"不支持的模型类型: {model_type}")
 
     @log_async(logger=logger)
     async def query_engines_by_model_name(self, model_name: str):
@@ -837,7 +1025,20 @@ class SupervisorActor(xo.StatelessActor):
         persist: bool,
         worker_ip: Optional[str] = None,
     ):
+        """
+        注册一个模型。
+
+        参数:
+        model_type (str): 模型类型
+        model (str): 模型规格的JSON字符串
+        persist (bool): 是否持久化模型
+        worker_ip (Optional[str]): 指定的工作节点IP地址，默认为None
+
+        异常:
+        ValueError: 当模型类型不支持或指定的worker_ip不在集群中时抛出
+        """
         if model_type in self._custom_register_type_to_cls:
+            # 获取与模型类型相关的类和函数
             (
                 model_spec_cls,
                 register_fn,
@@ -845,9 +1046,11 @@ class SupervisorActor(xo.StatelessActor):
                 generate_fn,
             ) = self._custom_register_type_to_cls[model_type]
 
+            # 获取指定IP的工作节点引用
             target_ip_worker_ref = (
                 self._get_worker_ref_by_ip(worker_ip) if worker_ip is not None else None
             )
+            # 检查指定的worker_ip是否有效
             if (
                 worker_ip is not None
                 and not self.is_local_deployment()
@@ -857,44 +1060,79 @@ class SupervisorActor(xo.StatelessActor):
                     f"Worker ip address {worker_ip} is not in the cluster."
                 )
 
+            # 如果指定了有效的工作节点，在该节点上注册模型
             if target_ip_worker_ref:
                 await target_ip_worker_ref.register_model(model_type, model, persist)
                 return
 
+            # 解析模型规格
             model_spec = model_spec_cls.parse_raw(model)
             try:
+                # 注册模型
                 register_fn(model_spec, persist)
+                # 记录模型版本
                 await self._cache_tracker_ref.record_model_version(
                     generate_fn(model_spec), self.address
                 )
             except ValueError as e:
+                # 直接抛出ValueError异常
                 raise e
             except Exception as e:
+                # 其他异常时，尝试注销模型并重新抛出异常
                 unregister_fn(model_spec.model_name, raise_error=False)
                 raise e
         else:
+            # 不支持的模型类型
             raise ValueError(f"Unsupported model type: {model_type}")
 
     @log_async(logger=logger)
     async def unregister_model(self, model_type: str, model_name: str):
+        """
+        注销指定类型和名称的模型。
+
+        参数:
+        model_type (str): 模型类型
+        model_name (str): 模型名称
+
+        异常:
+        ValueError: 当模型类型不支持时抛出
+        """
         if model_type in self._custom_register_type_to_cls:
+            # 获取注销函数
             _, _, unregister_fn, _ = self._custom_register_type_to_cls[model_type]
+            # 执行注销操作
             unregister_fn(model_name, False)
 
+            # 如果不是本地部署，则在所有工作节点上注销模型
             if not self.is_local_deployment():
                 workers = list(self._worker_address_to_worker.values())
                 for worker in workers:
                     await worker.unregister_model(model_type, model_name)
 
+            # 从缓存追踪器中注销模型版本
             await self._cache_tracker_ref.unregister_model_version(model_name)
         else:
-            raise ValueError(f"Unsupported model type: {model_type}")
+            # 如果模型类型不支持，抛出ValueError异常
+            raise ValueError(f"不支持的模型类型: {model_type}")
 
     def _gen_model_uid(self, model_name: str) -> str:
+        """
+        生成模型的唯一标识符。
+
+        参数:
+        model_name (str): 模型名称
+
+        返回:
+        str: 生成的模型唯一标识符
+
+        说明:
+        - 如果模型名称不在已存在的模型列表中，直接返回模型名称作为唯一标识符
+        - 如果模型名称已存在，则在模型名称后添加随机字符串后缀，以确保唯一性
+        """
         if model_name not in self._model_uid_to_replica_info:
             return model_name
         logger.debug(
-            f"{model_name} exists in xinference. Generate suffix to {model_name} for model_uid."
+            f"{model_name} 已存在于xinference中。为model_uid生成{model_name}的后缀。"
         )
         return f"{model_name}-{gen_random_string(8)}"
 
@@ -977,7 +1215,33 @@ class SupervisorActor(xo.StatelessActor):
         model_path: Optional[str] = None,
         **kwargs,
     ) -> str:
-        # search in worker first
+        """
+        启动内置模型。
+
+        参数:
+            model_uid: 可选，模型的唯一标识符
+            model_name: 模型名称
+            model_size_in_billions: 可选，模型大小（以十亿参数计）
+            model_format: 可选，模型格式
+            quantization: 可选，量化方法
+            model_engine: 可选，模型引擎
+            model_type: 可选，模型类型
+            replica: 副本数量，默认为1
+            n_gpu: 可选，GPU数量，默认为"auto"
+            request_limits: 可选，请求限制
+            wait_ready: 是否等待模型准备就绪，默认为True
+            model_version: 可选，模型版本
+            peft_model_config: 可选，PEFT模型配置
+            worker_ip: 可选，指定的worker IP地址
+            gpu_idx: 可选，指定的GPU索引
+            download_hub: 可选，下载模型的平台
+            model_path: 可选，模型路径
+            **kwargs: 其他参数
+
+        返回:
+            str: 启动的模型的唯一标识符
+        """
+        # 如果不是本地部署，在worker中搜索模型注册信息
         if not self.is_local_deployment():
             workers = list(self._worker_address_to_worker.values())
             for worker in workers:
@@ -985,21 +1249,27 @@ class SupervisorActor(xo.StatelessActor):
                 if res is not None:
                     worker_ip = worker.address.split(":")[0]
 
+        # 根据worker_ip获取目标worker引用
         target_ip_worker_ref = (
             self._get_worker_ref_by_ip(worker_ip) if worker_ip is not None else None
         )
+        
+        # 检查指定的worker_ip是否有效
         if (
             worker_ip is not None
             and not self.is_local_deployment()
             and target_ip_worker_ref is None
         ):
             raise ValueError(f"Worker ip address {worker_ip} is not in the cluster.")
+        
+        # 在本地模式下忽略worker_ip选项
         if worker_ip is not None and self.is_local_deployment():
             logger.warning(
                 f"You specified the worker ip: {worker_ip} in local mode, "
                 f"xinference will ignore this option."
             )
 
+        # 检查Tensorizer启用条件
         if kwargs.get("enable_tensorizer", None) and (
             (
                 model_engine is None
@@ -1013,6 +1283,7 @@ class SupervisorActor(xo.StatelessActor):
                 "Tensorizer can only be enabled for LLM models with Transformers engine, PyTorch format, and none quantization."
             )
 
+        # 检查特定模型是否支持Tensorizer
         if kwargs.get("enable_tensorizer", None) and model_name in [
             "OmniLMM",
             "yi-vl-chat",
@@ -1020,9 +1291,11 @@ class SupervisorActor(xo.StatelessActor):
         ]:
             raise ValueError("Tensorizer is not supported for %s." % model_name)
 
+        # 如果未提供model_uid，则生成一个
         if model_uid is None:
             model_uid = self._gen_model_uid(model_name)
 
+        # 准备日志信息
         model_size = str(model_size_in_billions) if model_size_in_billions else ""
         logger.debug(
             f"Enter launch_builtin_model, model_uid: {model_uid}, model_name: {model_name}, model_size: {model_size}, "
@@ -1030,6 +1303,7 @@ class SupervisorActor(xo.StatelessActor):
             f"kwargs: {kwargs}"
         )
 
+        # 定义启动单个模型的异步函数
         async def _launch_one_model(_replica_model_uid):
             if _replica_model_uid in self._replica_model_uid_to_worker:
                 raise ValueError(
@@ -1038,13 +1312,16 @@ class SupervisorActor(xo.StatelessActor):
             replica_gpu_idx = assign_replica_gpu(_replica_model_uid, gpu_idx)
             nonlocal model_type
 
+            # 选择worker
             worker_ref = (
                 target_ip_worker_ref
                 if target_ip_worker_ref is not None
                 else await self._choose_worker()
             )
-            # LLM as default for compatibility
+            # 默认使用LLM作为模型类型
             model_type = model_type or "LLM"
+            
+            # 在worker上启动模型
             await worker_ref.launch_builtin_model(
                 model_uid=_replica_model_uid,
                 model_name=model_name,
@@ -1063,6 +1340,7 @@ class SupervisorActor(xo.StatelessActor):
             )
             self._replica_model_uid_to_worker[_replica_model_uid] = worker_ref
 
+        # 定义启动所有模型副本的异步函数
         async def _launch_model():
             try:
                 for rep_model_uid in iter_replica_model_uid(model_uid, replica):
@@ -1075,22 +1353,27 @@ class SupervisorActor(xo.StatelessActor):
                 )
                 raise
 
+        # 验证model_uid是否有效
         if not is_valid_model_uid(model_uid):
             raise ValueError(
                 "The model UID is invalid. Please specify the model UID by 0 < length <= 100."
             )
 
+        # 验证request_limits参数
         if request_limits is not None and request_limits < 0:
             raise ValueError(
                 "The `request_limits` parameter must be greater or equal than 0."
             )
 
+        # 检查模型是否已存在
         if model_uid in self._model_uid_to_replica_info:
             raise ValueError(f"Model is already in the model list, uid: {model_uid}")
         # Set replica info first for exception handler to terminate model.
         self._model_uid_to_replica_info[model_uid] = ReplicaInfo(
             replica=replica, scheduler=itertools.cycle(range(replica))
         )
+        
+        # 创建实例信息
         instance_info = InstanceInfo(
             model_name=model_name,
             model_uid=model_uid,
@@ -1100,13 +1383,18 @@ class SupervisorActor(xo.StatelessActor):
             status=LaunchStatus.CREATING.name,
             instance_created_ts=int(time.time()),
         )
+        
+        # 设置实例信息
         await self._status_guard_ref.set_instance_info(model_uid, instance_info)
+        
+        # 根据wait_ready参数决定是否等待模型启动完成
         if wait_ready:
             await _launch_model()
         else:
             task = asyncio.create_task(_launch_model())
             ASYNC_LAUNCH_TASKS[model_uid] = task
             task.add_done_callback(lambda _: callback_for_async_launch(model_uid))
+        
         return model_uid
 
     async def get_instance_info(
@@ -1132,34 +1420,98 @@ class SupervisorActor(xo.StatelessActor):
     async def get_instance_count(self, model_name: str) -> int:
         return await self._status_guard_ref.get_instance_count(model_name)
 
+
+    async def _handle_possible_sleep(self, sleep_duration):
+       logger.info("Initiating recovery process after possible sleep")
+       
+       # 重置所有节点的状态
+       for status in self._worker_status.values():
+           status.failure_remaining_count = (XINFERENCE_HEALTH_CHECK_FAILURE_THRESHOLD)
+           status.update_time = time.time()
+       
+       # 给予额外时间让网络重新连接
+       await asyncio.sleep(5)
+       
+       # 主动检查所有节点
+       for address, worker in self._worker_address_to_worker.items():
+           try:
+               # 假设有一个检查节点健康的方法
+               is_healthy = await worker.check_health()
+               if is_healthy:
+                   self._worker_status[address].update_time = time.time()
+               else:
+                   logger.warning(f"Node {address} not responding after sleep")
+           except Exception as e:
+               logger.error(f"Error checking node {address}: {e}")
+       
+       logger.info("Recovery process completed")
+       
     async def _check_dead_nodes(self):
+        """
+        定期检查并处理死亡节点的异步方法。
+
+        此方法会持续运行，执行以下操作：
+        1. 遍历所有工作节点，检查其健康状态
+        2. 标记并处理超时的节点
+        3. 移除死亡节点及其相关模型信息
+        4. 记录错误日志
+        """
+        
+                        
+        # TODO 电脑休眠之后, workeer timeout。2024-09-11 15:12:33,673 xinference.core.supervisor 81596 ERROR    Worker timeout. address: 127.0.0.1:31285, check count remaining 4...
+        last_check_time = time.time()
         while True:
+            current_time = time.time()
+            time_elapsed = current_time - self._last_check_time
+            if time_elapsed > XINFERENCE_HEALTH_CHECK_INTERVAL * 2:
+                logger.warning(f"Possible system sleep detected. Time elapsed: {time_elapsed}")
+                # await asyncio.sleep(XINFERENCE_HEALTH_CHECK_INTERVAL - time_elapsed)
+            last_check_time = current_time
+            logger.info(f"time_elapsed: {time_elapsed}, last_check_time: {last_check_time}")
+
             try:
                 dead_nodes = []
+                
+                # TODO检测
+                # 遍历所有工作节点状态   for address, status in self._worker_status.items():
+                # time_since_update = current_time - status.update_time
+                # if time_since_update > XINFERENCE_HEALTH_CHECK_TIMEOUT:
+                # # 只有在上次检查之后经过了正常的检查间隔，才减少失败计数
+                # if time_since_update < time_elapsed + XINFERENCE_HEALTH_CHECK_INTERVAL:
+                #     status.failure_remaining_count -= 1
+                # else:
+                #     logger.info(f"Skipping failure count for {address} due to possible sleep")
+                    
                 for address, status in self._worker_status.items():
+                    # 检查节点是否超时
                     if (
                         time.time() - status.update_time
                         > XINFERENCE_HEALTH_CHECK_TIMEOUT
                     ):
                         status.failure_remaining_count -= 1
                     else:
+                        # 重置失败计数
                         status.failure_remaining_count = (
                             XINFERENCE_HEALTH_CHECK_FAILURE_THRESHOLD
                         )
 
+                    # 处理失败次数达到阈值的节点
                     if status.failure_remaining_count <= 0:
                         dead_models = []
+                        # 查找该节点上的所有模型
                         for model_uid in self._replica_model_uid_to_worker:
                             if (
                                 self._replica_model_uid_to_worker[model_uid].address
                                 == address
                             ):
                                 dead_models.append(model_uid)
+                        # 记录错误日志
                         logger.error(
                             "Worker dead. address: %s, influenced models: %s",
                             address,
                             dead_models,
                         )
+                        # 移除死亡节点上的模型信息
                         for replica_model_uid in dead_models:
                             model_uid, _, _ = parse_replica_model_uid(replica_model_uid)
                             self._model_uid_to_replica_info.pop(model_uid, None)
@@ -1171,21 +1523,46 @@ class SupervisorActor(xo.StatelessActor):
                         status.failure_remaining_count
                         != XINFERENCE_HEALTH_CHECK_FAILURE_THRESHOLD
                     ):
+                        # 记录节点超时警告 # 添加一些预防性操作
+                        # await self._attempt_reconnect(address)
+                        # await self._notify_admin(address, status.failure_remaining_count)
                         logger.error(
                             "Worker timeout. address: %s, check count remaining %s...",
                             address,
                             status.failure_remaining_count,
                         )
 
+                # 清理死亡节点的信息
                 for address in dead_nodes:
                     self._worker_status.pop(address, None)
                     self._worker_address_to_worker.pop(address, None)
             finally:
+                # 等待下一次检查
+                logger.info("Waiting for next health check interval")
                 await asyncio.sleep(XINFERENCE_HEALTH_CHECK_INTERVAL)
 
     @log_async(logger=logger)
     async def terminate_model(self, model_uid: str, suppress_exception=False):
+        """
+        终止指定模型及其所有副本。
+
+        参数:
+        model_uid (str): 要终止的模型的唯一标识符。
+        suppress_exception (bool): 是否抑制异常，默认为False。
+
+        异常:
+        ValueError: 当模型未找到时抛出。
+        """
         async def _terminate_one_model(_replica_model_uid):
+            """
+            终止单个模型副本。
+
+            参数:
+            _replica_model_uid (str): 模型副本的唯一标识符。
+
+            异常:
+            ValueError: 当模型副本未找到时抛出。
+            """
             worker_ref = self._replica_model_uid_to_worker.get(_replica_model_uid, None)
 
             if worker_ref is None:
@@ -1195,33 +1572,43 @@ class SupervisorActor(xo.StatelessActor):
             await worker_ref.terminate_model(model_uid=_replica_model_uid)
             del self._replica_model_uid_to_worker[_replica_model_uid]
 
+        # 获取模型的副本信息
         replica_info = self._model_uid_to_replica_info.get(model_uid, None)
         if replica_info is None:
             raise ValueError(f"Model not found in the model list, uid: {model_uid}")
 
+        # 遍历并终止所有副本
         for rep_model_uid in iter_replica_model_uid(model_uid, replica_info.replica):
             try:
                 await _terminate_one_model(rep_model_uid)
             except Exception:
                 if not suppress_exception:
                     raise
+        
+        # 从副本信息字典中移除该模型
         self._model_uid_to_replica_info.pop(model_uid, None)
 
     @log_async(logger=logger)
     async def get_model(self, model_uid: str) -> xo.ActorRefType["ModelActor"]:
+        # 从模型UID到副本信息的映射中获取副本信息
         replica_info = self._model_uid_to_replica_info.get(model_uid, None)
         if replica_info is None:
-            raise ValueError(f"Model not found in the model list, uid: {model_uid}")
+            # 如果找不到副本信息，抛出ValueError异常
+            raise ValueError(f"模型未在模型列表中找到，uid: {model_uid}")
 
+        # 构建副本模型UID
         replica_model_uid = build_replica_model_uid(
             model_uid, replica_info.replica, next(replica_info.scheduler)
         )
 
+        # 从副本模型UID到工作节点引用的映射中获取工作节点引用
         worker_ref = self._replica_model_uid_to_worker.get(replica_model_uid, None)
         if worker_ref is None:
+            # 如果找不到工作节点引用，抛出ValueError异常
             raise ValueError(
-                f"Model not found in the model list, uid: {replica_model_uid}"
+                f"模型未在模型列表中找到，uid: {replica_model_uid}"
             )
+        # 调用工作节点的get_model方法获取模型引用并返回
         return await worker_ref.get_model(model_uid=replica_model_uid)
 
     @log_async(logger=logger)
@@ -1283,27 +1670,42 @@ class SupervisorActor(xo.StatelessActor):
     async def list_cached_models(
         self, model_name: Optional[str] = None, worker_ip: Optional[str] = None
     ) -> List[Dict[str, Any]]:
+        # 根据worker_ip获取对应的worker引用
         target_ip_worker_ref = (
             self._get_worker_ref_by_ip(worker_ip) if worker_ip is not None else None
         )
+        
+        # 检查指定的worker_ip是否有效
         if (
             worker_ip is not None
             and not self.is_local_deployment()
             and target_ip_worker_ref is None
         ):
-            raise ValueError(f"Worker ip address {worker_ip} is not in the cluster.")
+            raise ValueError(f"Worker ip地址 {worker_ip} 不在集群中。")
 
-        # search assigned worker and return
+        # 如果指定了特定的worker，则只搜索该worker并返回结果
         if target_ip_worker_ref:
             cached_models = await target_ip_worker_ref.list_cached_models(model_name)
             cached_models = sorted(cached_models, key=lambda x: x["model_name"])
             return cached_models
 
-        # search all worker
+        # 如果没有指定worker，则搜索所有worker
+        # 在这段代码中的具体应用:
+        # cached_models 是一个初始为空的列表。
+        # 对于每个 worker，worker.list_cached_models(model_name) 返回一个列表 res。
+        # cached_models.extend(res) 将 res 中的所有元素添加到 cached_models 的末尾。
+        # 3. 工作原理:
+        # 假设有三个 worker，每个 worker 返回的 res 分别是 [1, 2], [3, 4], 和 [5]。
+        # 第一次循环后：cached_models = [1, 2]
+        # 第二次循环后：cached_models = [1, 2, 3, 4]
+        # 第三次循环后：cached_models = [1, 2, 3, 4, 5]
+        
         cached_models = []
         for worker in self._worker_address_to_worker.values():
             res = await worker.list_cached_models(model_name)
             cached_models.extend(res)
+        
+        # 对结果按模型名称排序
         cached_models = sorted(cached_models, key=lambda x: x["model_name"])
         return cached_models
 
@@ -1446,9 +1848,12 @@ class SupervisorActor(xo.StatelessActor):
     async def confirm_and_remove_model(
         self, model_version: str, worker_ip: Optional[str] = None
     ) -> bool:
+        # 根据提供的worker_ip获取对应的worker引用
         target_ip_worker_ref = (
             self._get_worker_ref_by_ip(worker_ip) if worker_ip is not None else None
         )
+        
+        # 检查worker_ip是否有效
         if (
             worker_ip is not None
             and not self.is_local_deployment()
@@ -1456,43 +1861,89 @@ class SupervisorActor(xo.StatelessActor):
         ):
             raise ValueError(f"Worker ip address {worker_ip} is not in the cluster.")
 
+        # 如果指定了特定的worker
         if target_ip_worker_ref:
+            # 在指定的worker上确认并移除模型
             ret = await target_ip_worker_ref.confirm_and_remove_model(
                 model_version=model_version,
             )
             return ret
+        
+        # 如果未指定特定worker，则在所有worker上执行操作
         ret = True
         for worker in self._worker_address_to_worker.values():
+            # 在每个worker上确认并移除模型，并更新结果
             ret = ret and await worker.confirm_and_remove_model(
                 model_version=model_version,
             )
         return ret
 
     async def get_workers_info(self) -> List[Dict[str, Any]]:
+        """
+        获取所有工作节点的信息。
+
+        返回值:
+        List[Dict[str, Any]]: 包含所有工作节点信息的列表，每个节点的信息以字典形式表示。
+        """
         ret = []
         for worker in self._worker_address_to_worker.values():
+            # 异步获取每个工作节点的信息
             ret.append(await worker.get_workers_info())
         return ret
 
     async def get_supervisor_info(self) -> Dict[str, Any]:
+        """
+        获取监督者（supervisor）的信息。
+
+        返回值:
+        Dict[str, Any]: 包含监督者信息的字典。
+            目前仅包含 'supervisor_ip' 键，对应的值为监督者的IP地址。
+
+        注意:
+        这是一个异步方法，但实际上并不涉及任何异步操作。
+        可能为了保持接口一致性而定义为异步方法。
+        """
         ret = {
             "supervisor_ip": self.address,
         }
         return ret
 
     async def trigger_exit(self) -> bool:
+        """
+        触发退出进程的异步方法。
+
+        尝试向当前进程发送SIGTERM信号以触发退出。
+
+        返回值:
+        bool: 如果成功触发退出返回True，否则返回False。
+        """
         try:
+            # 向当前进程发送SIGTERM信号
             os.kill(os.getpid(), signal.SIGTERM)
         except Exception as e:
-            logger.info(f"trigger exit error: {e}")
+            # 如果发生异常，记录错误信息并返回False
+            logger.info(f"触发退出时发生错误: {e}")
             return False
+        # 如果成功发送信号，返回True
         return True
 
     async def abort_cluster(self) -> bool:
+        """
+        中止整个集群的异步方法。
+
+        该方法会尝试触发所有工作节点和监督者节点的退出。
+
+        返回值:
+        bool: 如果所有节点都成功触发退出则返回True，否则返回False。
+        """
         ret = True
+        # 遍历所有工作节点并触发它们的退出
+        # 如果任何一个节点退出失败，ret就会编程False
+        # TODO 这里是否是只要有一个worker退出失败，ret就会编程False？其他的worker就不要进行退出了 ？
         for worker in self._worker_address_to_worker.values():
             ret = ret and await worker.trigger_exit()
 
+        # 只有所有的worker都推出了，supervisor （自身）才能退出
         ret = ret and await self.trigger_exit()
         return ret
 

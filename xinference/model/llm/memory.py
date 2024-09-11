@@ -118,15 +118,22 @@ def estimate_llm_gpu_memory(
     返回:
     ModelMemInfo对象，包含详细的内存占用信息
     """
+    # 获取模型层信息
     info = get_model_layers_info(
         model_size_in_billions,
         model_name,
         model_format,
         quantization,
     )
+    
+    # 如果无法获取模型层信息，则返回None
     if info is None:
         return None
+    
+    # 将模型大小转换为浮点数
     size_in_billions = convert_model_size_to_float(model_size_in_billions)
+    
+    # 调用详细估算函数并返回结果
     return estimate_llm_gpu_memory_details(
         info,
         size_in_billions,
@@ -159,23 +166,34 @@ def estimate_llm_gpu_memory_details(
     返回:
     ModelMemInfo对象，包含模型内存、KV缓存、额外开销和激活内存的详细信息
     """
+    # 验证KV缓存数据类型
     if kv_cache_dtype not in [8, 16, 32]:
         raise ValueError(f"无效的kv_cache_dtype {kv_cache_dtype}")
+    
+    # 根据KV缓存数据类型确定每个元素的字节大小
     if kv_cache_dtype == 8:
         kv_dtype_size = 1
     elif kv_cache_dtype == 16:
         kv_dtype_size = 2
     else:
         kv_dtype_size = 4
+    
+    # 设置基础开销
     overhead = 650.0
+    
+    # 根据模型格式进行不同的内存估算
     if model_format == "ggufv2":
         assert quantization is not None and quantization != "none"
+        # 计算模型大小
         model_size_in_mb = _compute_model_size_gguf(info, quantization)
+        # 计算推理内存
         inference_mem = float(
             context_length * kv_dtype_size * info.hidden_dim * info.num_layers
         )
         inference_mem = inference_mem / 1024.0 / 1024.0
+        # 计算激活内存
         activation_mem = _compute_inference_only_activation_memory(context_length, info)
+        # 调整开销
         overhead = overhead + context_length * 0.1
     else:
         if quantization is not None:
@@ -183,16 +201,21 @@ def estimate_llm_gpu_memory_details(
             quantization = QUANT_NORMALIZE[quantization.lower()]
             assert quantization is not None
 
+        # 计算模型大小
         model_size = size_in_billions * 1000000000.0
         model_size_in_mb = _convert_to_mb_model_size(model_size, quantization)
-        # KV缓存
+        # 计算KV缓存
         inference_mem = float(
             context_length * 2 * kv_dtype_size * info.hidden_dim * info.num_layers
         )
         inference_mem = inference_mem / 1024.0 / 1024.0
+        # 计算激活内存
         activation_mem = _compute_inference_only_activation_memory(context_length, info)
 
+    # 计算总内存
     total_mem = ceil(inference_mem + model_size_in_mb + overhead + activation_mem)
+    
+    # 返回ModelMemInfo对象
     return ModelMemInfo(
         model_mem=ceil(model_size_in_mb),
         kv_cache_mem=ceil(inference_mem),

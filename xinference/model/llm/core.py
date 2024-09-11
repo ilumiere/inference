@@ -302,20 +302,27 @@ def create_llm_model_instance(
     """
     from .llm_family import cache, check_engine_by_spec_parameters, match_llm
 
+    # 检查模型引擎是否提供
     if model_engine is None:
         raise ValueError("model_engine is required for LLM model")
+    
+    # 匹配LLM模型
     match_result = match_llm(
         model_name, model_format, model_size_in_billions, quantization, download_hub
     )
 
+    # 如果没有匹配到模型，抛出异常
     if not match_result:
         raise ValueError(
             f"Model not found, name: {model_name}, format: {model_format},"
             f" size: {model_size_in_billions}, quantization: {quantization}"
         )
+    
+    # 解包匹配结果
     llm_family, llm_spec, quantization = match_result
     assert quantization is not None
 
+    # 检查引擎并获取对应的LLM类
     llm_cls = check_engine_by_spec_parameters(
         model_engine,
         llm_family.model_name,
@@ -325,11 +332,14 @@ def create_llm_model_instance(
     )
     logger.debug(f"Launching {model_uid} with {llm_cls.__name__}")
 
+    # 如果没有提供模型路径，则从缓存中获取
     if not model_path:
         model_path = cache(llm_family, llm_spec, quantization)
 
+    # 处理PEFT模型配置
     peft_model = peft_model_config.peft_model if peft_model_config else None
     if peft_model is not None:
+        # 检查LLM类是否支持PEFT模型
         if "peft_model" in inspect.signature(llm_cls.__init__).parameters:
             model = llm_cls(
                 model_uid,
@@ -341,6 +351,7 @@ def create_llm_model_instance(
                 peft_model,
             )
         else:
+            # 如果不支持PEFT，发出警告并加载没有PEFT的模型
             logger.warning(
                 f"Model not supported with lora, name: {model_name}, format: {model_format}, engine: {model_engine}. "
                 f"Load this without lora."
@@ -349,9 +360,12 @@ def create_llm_model_instance(
                 model_uid, llm_family, llm_spec, quantization, model_path, kwargs
             )
     else:
+        # 创建普通LLM模型实例
         model = llm_cls(
             model_uid, llm_family, llm_spec, quantization, model_path, kwargs
         )
+    
+    # 返回创建的模型实例和对应的LLM描述
     return model, LLMDescription(
         subpool_addr, devices, llm_family, llm_spec, quantization
     )

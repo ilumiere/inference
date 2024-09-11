@@ -93,6 +93,7 @@ class WorkerActor(xo.StatelessActor):
         # 模型启动过程中的临时占位符
         self._model_uid_launching_guard: Dict[str, bool] = {}
         # 模型启动后维护的属性
+        # 虽然每个 model_uid 只对应一个 ModelActor，但这个字典可以包含多个不同的 model_uid 和对应的 ModelActor，从而管理多个模型实例。
         self._model_uid_to_model: Dict[str, xo.ActorRefType["ModelActor"]] = {}  # 模型UID到模型Actor的映射
         self._model_uid_to_model_spec: Dict[str, ModelDescription] = {}  # 模型UID到模型描述的映射
         self._gpu_to_model_uid: Dict[int, str] = {}  # GPU索引到模型UID的映射
@@ -333,11 +334,22 @@ class WorkerActor(xo.StatelessActor):
         self._isolation.stop()
 
     async def trigger_exit(self) -> bool:
+        """
+        触发退出进程的函数。
+
+        尝试向当前进程发送SIGINT信号以触发退出。
+
+        返回值:
+            bool: 如果成功发送信号返回True，否则返回False。
+        """
         try:
+            # 向当前进程发送SIGINT信号
             os.kill(os.getpid(), signal.SIGINT)
         except Exception as e:
-            logger.info(f"trigger exit error: {e}")
+            # 如果发送信号失败，记录错误信息并返回False
+            logger.info(f"触发退出时出错: {e}")
             return False
+        # 成功发送信号，返回True
         return True
 
     async def get_supervisor_ref(self, add_worker: bool = True) -> xo.ActorRefType:
@@ -404,6 +416,16 @@ class WorkerActor(xo.StatelessActor):
 
     @staticmethod
     def get_devices_count():
+        """
+        获取设备数量的静态方法。
+
+        返回:
+            int: 可用的GPU设备数量。
+
+        说明:
+        - 从device_utils模块导入gpu_count函数。
+        - 直接返回gpu_count()的结果。
+        """
         from ..device_utils import gpu_count
 
         return gpu_count()
@@ -535,7 +557,19 @@ class WorkerActor(xo.StatelessActor):
         self, model_uid: str, model_type: str, gpu_idx: List[int]
     ) -> List[int]:
         """
-        When user specifies the gpu_idx, allocate models on user-specified GPUs whenever possible
+        当用户指定 GPU 索引时，尽可能在用户指定的 GPU 上分配模型。
+
+        参数:
+        model_uid (str): 模型的唯一标识符
+        model_type (str): 模型类型
+        gpu_idx (List[int]): 用户指定的 GPU 索引列表
+
+        返回:
+        List[int]: 排序后的已分配 GPU 索引列表
+
+        异常:
+        ValueError: 如果指定的 GPU 索引不在工作节点可见的 GPU 范围内
+        RuntimeError: 如果指定的 GPU 已被 vLLM 模型占用
         """
         # must be subset of total devices visible to this worker
         if not set(gpu_idx) <= set(self._total_gpu_devices):
@@ -543,7 +577,8 @@ class WorkerActor(xo.StatelessActor):
                 f"Worker {self.address} cannot use the GPUs with these indexes: {gpu_idx}. "
                 f"Worker {self.address} can only see these GPUs: {self._total_gpu_devices}."
             )
-        # currently just report a warning log when there are already models on these GPUs
+        
+        # 检查指定的 GPU 是否已被其他模型占用，并发出警告
         for idx in gpu_idx:
             existing_model_uids = []
             if idx in self._gpu_to_model_uid:
@@ -574,8 +609,11 @@ class WorkerActor(xo.StatelessActor):
                     f"with these models on it: {existing_model_uids}"
                 )
 
+        # 将模型分配到指定的 GPU 上
         for idx in gpu_idx:
             self._user_specified_gpu_to_model_uids[idx].add((model_uid, model_type))
+        
+        # 返回排序后的 GPU 索引列表
         return sorted(gpu_idx)
 
     def release_devices(self, model_uid: str):
@@ -708,24 +746,29 @@ class WorkerActor(xo.StatelessActor):
     async def unregister_model(self, model_type: str, model_name: str):
         # TODO: centralized model registrations
         if model_type in self._custom_register_type_to_cls:
+            # 从自定义注册类型中获取相关函数
             _, _, unregister_fn, _ = self._custom_register_type_to_cls[model_type]
+            # 调用注销函数，不抛出错误
             unregister_fn(model_name, False)
         else:
-            raise ValueError(f"Unsupported model type: {model_type}")
-
+            # 如果模型类型不支持，抛出ValueError
+            raise ValueError(f"不支持的模型类型: {model_type}")
+            
     @log_async(logger=logger)
     async def list_model_registrations(
         self, model_type: str, detailed: bool = False
     ) -> List[Dict[str, Any]]:
+        # 定义一个辅助函数，用于排序模型列表
         def sort_helper(item):
             assert isinstance(item["model_name"], str)
             return item.get("model_name").lower()
 
+        # 根据不同的模型类型处理
         if model_type == "LLM":
             from ..model.llm import get_user_defined_llm_families
 
             ret = []
-
+            # 获取用户定义的LLM家族并添加到结果列表
             for family in get_user_defined_llm_families():
                 ret.append({"model_name": family.model_name, "is_builtin": False})
 
@@ -735,7 +778,7 @@ class WorkerActor(xo.StatelessActor):
             from ..model.embedding.custom import get_user_defined_embeddings
 
             ret = []
-
+            # 获取用户定义的嵌入模型并添加到结果列表
             for model_spec in get_user_defined_embeddings():
                 ret.append({"model_name": model_spec.model_name, "is_builtin": False})
 
@@ -745,7 +788,7 @@ class WorkerActor(xo.StatelessActor):
             from ..model.image.custom import get_user_defined_images
 
             ret = []
-
+            # 获取用户定义的图像模型并添加到结果列表
             for model_spec in get_user_defined_images():
                 ret.append({"model_name": model_spec.model_name, "is_builtin": False})
 
@@ -755,19 +798,21 @@ class WorkerActor(xo.StatelessActor):
             from ..model.audio.custom import get_user_defined_audios
 
             ret = []
-
+            # 获取用户定义的音频模型并添加到结果列表
             for model_spec in get_user_defined_audios():
                 ret.append({"model_name": model_spec.model_name, "is_builtin": False})
 
             ret.sort(key=sort_helper)
             return ret
         elif model_type == "video":
+            # 视频模型暂时返回空列表
             return []
+
         elif model_type == "rerank":
             from ..model.rerank.custom import get_user_defined_reranks
 
             ret = []
-
+            # 获取用户定义的重排序模型并添加到结果列表
             for model_spec in get_user_defined_reranks():
                 ret.append({"model_name": model_spec.model_name, "is_builtin": False})
 
@@ -776,8 +821,57 @@ class WorkerActor(xo.StatelessActor):
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
 
+            
+        # TODO优化，不需要每个地方都返回ret
+        # else:
+        #     # 如果是不支持的模型类型，抛出ValueError异常
+        #     raise ValueError(f"不支持的模型类型: {model_type}")
+
+        # # 对结果列表进行排序并返回
+        # ret.sort(key=sort_helper)
+        # return ret
+
     @log_sync(logger=logger)
     async def get_model_registration(self, model_type: str, model_name: str) -> Any:
+        """
+        获取指定类型和名称的模型注册信息。
+
+        参数:
+        model_type (str): 模型类型，如 'LLM', 'embedding', 'image' 等
+        model_name (str): 模型名称
+        
+        根据不同的模型类型，返回的对象可能是以下之一：
+        LLM: LLMFamilyV1 对象
+        Embedding: EmbeddingModelSpec 对象
+        Image: ImageModelSpec 对象
+        Audio: AudioModelSpec 对象
+        Rerank: RerankModelSpec 对象
+        
+        {
+            "model_name": "gpt-3.5-turbo",
+            "model_lang": ["en"],
+            "model_ability": ["chat", "embedding"],
+            "model_description": "GPT-3.5 Turbo model by OpenAI",
+            "model_family": "gpt",
+            "model_specifications": [
+                {
+                    "model_size": "7B",
+                    "quantization": "none",
+                    "model_format": "ggmlv3"
+                }
+        ],
+        # 其他相关属性...
+         }
+
+        返回:
+        Any: 如果找到匹配的模型，返回模型注册信息；否则返回 None
+
+        说明:
+        - 根据不同的模型类型，从相应的自定义模型集合中查找匹配的模型
+        - 对于每种模型类型，导入相应的模块并遍历其中的模型
+        - 如果找到匹配的模型名称，立即返回该模型的注册信息
+        - 如果遍历完所有模型后仍未找到匹配，返回 None
+        """
         if model_type == "LLM":
             from ..model.llm import get_user_defined_llm_families
 
@@ -814,6 +908,23 @@ class WorkerActor(xo.StatelessActor):
 
     @log_async(logger=logger)
     async def query_engines_by_model_name(self, model_name: str):
+        """
+        根据模型名称查询可用的引擎参数。
+
+        参数:
+        model_name (str): 要查询的模型名称
+
+        返回:
+        Dict[str, List[Dict[str, Any]]] | None: 
+            如果找到模型，返回一个字典，其中键是引擎名称，值是该引擎的参数列表。
+            如果未找到模型，返回 None。
+
+        说明:
+        - 从 LLM_ENGINES 中获取指定模型名称的引擎参数
+        - 深拷贝参数以避免修改原始数据
+        - 移除每个参数中的 'llm_class' 键
+        - 返回处理后的引擎参数字典
+        """
         from copy import deepcopy
 
         from ..model.llm.llm_family import LLM_ENGINES
@@ -821,7 +932,7 @@ class WorkerActor(xo.StatelessActor):
         if model_name not in LLM_ENGINES:
             return None
 
-        # filter llm_class
+        # 深拷贝引擎参数并移除 llm_class
         engine_params = deepcopy(LLM_ENGINES[model_name])
         for engine in engine_params:
             params = engine_params[engine]
@@ -831,6 +942,20 @@ class WorkerActor(xo.StatelessActor):
         return engine_params
 
     async def _get_model_ability(self, model: Any, model_type: str) -> List[str]:
+        """
+        获取模型的能力列表。
+
+        参数:
+        model (Any): 模型对象
+        model_type (str): 模型类型
+
+        返回:
+        List[str]: 模型能力列表
+
+        说明:
+        - 根据不同的模型类型返回相应的能力列表
+        - 对于LLM模型，返回其model_family中定义的能力
+        """
         from ..model.llm.core import LLM
 
         if model_type == "embedding":
@@ -853,8 +978,29 @@ class WorkerActor(xo.StatelessActor):
     async def update_cache_status(
         self, model_name: str, model_description: ModelDescription
     ):
+        """
+        更新模型缓存状态。
+
+        参数:
+        model_name (str): 模型名称
+        model_description (ModelDescription): 模型描述对象
+
+        说明:
+        - 获取模型版本信息
+        - 根据版本信息类型（列表或字典）更新缓存状态
+        - 对于图像模型，使用列表中第一个元素的模型文件位置
+        - 对于其他模型，使用版本信息中的模型版本和文件位置
+        """
         version_info = model_description.to_version_info()
-        if isinstance(version_info, list):  # image model
+        
+        # 
+        # if model_description.model_type == "image":
+        #     model_path = version_info[0]["model_file_location"]
+        #     # ... 其余代码 ...
+        # else:
+        # # ... 处理其他类型模型 ...
+        # 这里默认图像模型是列表而不是字典
+        if isinstance(version_info, list):  # 图像模型
             model_path = version_info[0]["model_file_location"]
             await self._cache_tracker_ref.update_cache_status(
                 self.address, model_name, None, model_path
@@ -888,16 +1034,28 @@ class WorkerActor(xo.StatelessActor):
         # !!! Note that The following code must be placed at the very beginning of this function,
         # or there will be problems with auto-recovery.
         # Because `locals()` will collect all the local parameters of this function and pass to this function again.
+
+        # locals() 函数：
+        
+        # 返回一个字典，包含当前局部符号表中的所有变量。
+        # 在函数开始时调用，它会包含所有的函数参数。
+        # 保存参数的目的：
+        # 创建一个包含所有函数参数的字典。
+        # 这些参数可能在后续的自动恢复过程中被重用。
+
         launch_args = locals()
         launch_args.pop("self")
         launch_args.pop("kwargs")
         launch_args.update(kwargs)
 
+        # 解析模型UID，获取原始UID
         try:
             origin_uid, _, _ = parse_replica_model_uid(model_uid)
         except Exception as e:
             logger.exception(e)
             raise
+
+        # 尝试获取supervisor引用并报告启动模型事件
         try:
             _ = await self.get_supervisor_ref()
             if self._event_collector_ref is not None:
@@ -913,6 +1071,7 @@ class WorkerActor(xo.StatelessActor):
             # Report callback error can be log and ignore, should not interrupt the Process
             logger.error("report_event error: %s" % (e))
 
+        # 检查并处理GPU索引参数
         if gpu_idx is not None:
             logger.info(
                 f"You specify to launch the model: {model_name} on GPU index: {gpu_idx} "
@@ -923,6 +1082,7 @@ class WorkerActor(xo.StatelessActor):
                 gpu_idx = [gpu_idx]
             assert isinstance(gpu_idx, list)
 
+        # 验证n_gpu参数
         if n_gpu is not None:
             if isinstance(n_gpu, int) and (n_gpu <= 0 or n_gpu > gpu_count()):
                 raise ValueError(
@@ -932,6 +1092,7 @@ class WorkerActor(xo.StatelessActor):
             if isinstance(n_gpu, str) and n_gpu != "auto":
                 raise ValueError("Currently `n_gpu` only supports `auto`.")
 
+        # 检查PEFT模型配置的兼容性
         if peft_model_config is not None:
             if model_type in ("embedding", "rerank"):
                 raise ValueError(
@@ -941,25 +1102,33 @@ class WorkerActor(xo.StatelessActor):
                 raise ValueError(
                     f"PEFT adaptors can only be applied to pytorch-like models"
                 )
+
+        # 验证模型路径
         if model_path is not None:
             if not os.path.exists(model_path):
                 raise ValueError(
                     f"Invalid input. `model_path`: {model_path} File or directory does not exist."
                 )
 
+        # 确保模型UID不重复
         assert model_uid not in self._model_uid_to_model
         self._check_model_is_valid(model_name, model_format)
 
+        # 检查模型是否已在运行
         if self.get_model_launch_status(model_uid) is not None:
             raise ValueError(f"{model_uid} is running")
 
         try:
+            # 设置模型启动保护
             self._model_uid_launching_guard[model_uid] = True
+            
+            # 创建子池并获取设备信息
             subpool_address, devices = await self._create_subpool(
                 model_uid, model_type, n_gpu=n_gpu, gpu_idx=gpu_idx
             )
 
             try:
+                # 创建模型实例
                 model, model_description = await asyncio.to_thread(
                     create_model_instance,
                     subpool_address,
@@ -976,7 +1145,10 @@ class WorkerActor(xo.StatelessActor):
                     model_path,
                     **kwargs,
                 )
+                # 更新缓存状态
                 await self.update_cache_status(model_name, model_description)
+                
+                # 创建模型Actor
                 model_ref = await xo.create_actor(
                     ModelActor,
                     address=subpool_address,
@@ -986,29 +1158,41 @@ class WorkerActor(xo.StatelessActor):
                     model_description=model_description,
                     request_limits=request_limits,
                 )
+                # 加载模型
                 await model_ref.load()
             except:
+                # 如果加载失败，释放资源并抛出异常
                 logger.error(f"Failed to load model {model_uid}", exc_info=True)
                 self.release_devices(model_uid=model_uid)
                 await self._main_pool.remove_sub_pool(subpool_address)
                 raise
+            
+            # 保存模型相关信息
             self._model_uid_to_model[model_uid] = model_ref
             self._model_uid_to_model_spec[model_uid] = model_description
             self._model_uid_to_addr[model_uid] = subpool_address
             self._model_uid_to_recover_count.setdefault(
                 model_uid, MODEL_ACTOR_AUTO_RECOVER_LIMIT
             )
+            
+            # 如果模型加载失败或系统崩溃，系统可能会尝试使用保存的 launch_args 重新启动模型。
+            # 这允许系统在不需要外部干预的情况下尝试恢复。
+
             self._model_uid_to_launch_args[model_uid] = launch_args
         finally:
+            # 移除模型启动保护
             del self._model_uid_launching_guard[model_uid]
 
-        # update status to READY
+        # 获取模型能力
         abilities = await self._get_model_ability(model, model_type)
         _ = await self.get_supervisor_ref(add_worker=False)
 
+        # 确保状态守卫引用存在
         if self._status_guard_ref is None:
             _ = await self.get_supervisor_ref()
         assert self._status_guard_ref is not None
+        
+        # 更新实例信息，将状态设置为READY
         await self._status_guard_ref.update_instance_info(
             origin_uid,
             {"model_ability": abilities, "status": LaunchStatus.READY.name},
@@ -1016,13 +1200,18 @@ class WorkerActor(xo.StatelessActor):
 
     @log_async(logger=logger)
     async def terminate_model(self, model_uid: str, is_model_die=False):
-        # Terminate model while its launching is not allow
+        # 不允许终止正在启动的模型
         if model_uid in self._model_uid_launching_guard:
             raise ValueError(f"{model_uid} is launching")
+        
+        # 解析模型UID
         origin_uid, _, __ = parse_replica_model_uid(model_uid)
+        
         try:
+            # 获取supervisor引用
             _ = await self.get_supervisor_ref()
             if self._event_collector_ref is not None:
+                # 报告终止模型事件
                 await self._event_collector_ref.report_event(
                     origin_uid,
                     Event(
@@ -1036,20 +1225,25 @@ class WorkerActor(xo.StatelessActor):
             logger.error("report_event error: %s" % (e))
 
         if self._status_guard_ref is not None:
+            # 更新模型状态为正在终止
             await self._status_guard_ref.update_instance_info(
                 origin_uid, {"status": LaunchStatus.TERMINATING.name}
             )
+        
+        # 获取模型引用
         model_ref = self._model_uid_to_model.get(model_uid, None)
         if model_ref is None:
             logger.debug("Model not found, uid: %s", model_uid)
 
         try:
+            # 销毁模型actor
             await xo.destroy_actor(model_ref)
         except Exception as e:
             logger.debug(
                 "Destroy model actor failed, model uid: %s, error: %s", model_uid, e
             )
         try:
+            # 移除子池
             subpool_address = self._model_uid_to_addr[model_uid]
             await self._main_pool.remove_sub_pool(subpool_address)
         except Exception as e:
@@ -1057,6 +1251,7 @@ class WorkerActor(xo.StatelessActor):
                 "Remove sub pool failed, model uid: %s, error: %s", model_uid, e
             )
         finally:
+            # 清理相关数据结构
             self._model_uid_to_model.pop(model_uid, None)
             self._model_uid_to_model_spec.pop(model_uid, None)
             self.release_devices(model_uid)
@@ -1072,6 +1267,7 @@ class WorkerActor(xo.StatelessActor):
             if self._status_guard_ref is None:
                 _ = await self.get_supervisor_ref()
             assert self._status_guard_ref is not None
+            # 更新模型实例信息
             await self._status_guard_ref.update_instance_info(
                 origin_uid, {"status": status}
             )
@@ -1079,25 +1275,46 @@ class WorkerActor(xo.StatelessActor):
     # Provide an interface for future version of supervisor to call
     def get_model_launch_status(self, model_uid: str) -> Optional[str]:
         """
-        returns:
-            CREATING: model is launching
-            RREADY: model is running
-            None: model is not running (launch error might have happened)
-        """
+        获取指定模型的启动状态。
 
+        参数:
+            model_uid (str): 模型的唯一标识符。
+
+        返回:
+            Optional[str]: 
+                - LaunchStatus.CREATING.name: 模型正在启动中。
+                - LaunchStatus.READY.name: 模型已经运行并准备就绪。
+                - None: 模型未运行（可能发生了启动错误）。
+
+        说明:
+            此函数为未来版本的supervisor提供接口，用于查询模型的启动状态。
+            它检查模型是否在启动过程中或已经准备就绪，如果都不是则返回None。
+        """
+        # 检查模型是否正在启动过程中
         if model_uid in self._model_uid_launching_guard:
             return LaunchStatus.CREATING.name
+        
+        # 检查模型是否已经准备就绪
         if model_uid in self._model_uid_to_model:
             return LaunchStatus.READY.name
+        
+        # 如果模型既不在启动过程中，也不在已准备就绪的列表中，则返回None
         return None
 
     @log_async(logger=logger)
     async def list_models(self) -> Dict[str, Dict[str, Any]]:
+        # 初始化一个空字典用于存储结果
         ret = {}
 
+        # 获取模型 UID 到模型规格的映射列表
         items = list(self._model_uid_to_model_spec.items())
+        
+        # 遍历每个模型 UID 和对应的模型规格
         for k, v in items:
+            # 将模型规格转换为字典形式，并以模型 UID 为键存储在结果字典中
             ret[k] = v.to_dict()
+        
+        # 返回包含所有模型信息的字典
         return ret
 
     @log_sync(logger=logger)
@@ -1115,36 +1332,52 @@ class WorkerActor(xo.StatelessActor):
         return model_desc.to_dict()
 
     async def report_status(self):
+        # 初始化状态字典
         status = dict()
         try:
-            # asyncio.timeout is only available in Python >= 3.11
+            # 使用2秒超时设置
+            # 注意: asyncio.timeout 仅在 Python >= 3.11 可用
             async with timeout(2):
+                # 异步调用 gather_node_info 函数收集节点信息
                 status = await asyncio.to_thread(gather_node_info)
         except asyncio.CancelledError:
+            # 如果任务被取消，重新抛出异常
             raise
         except Exception:
-            logger.exception("Report status got error.")
+            # 记录状态报告过程中的任何其他异常
+            logger.exception("报告状态时发生错误。")
+        
+        # 获取supervisor的引用
         supervisor_ref = await self.get_supervisor_ref()
+        # 向supervisor报告worker的状态
         await supervisor_ref.report_worker_status(self.address, status)
 
     async def _periodical_report_status(self):
+        """
+        定期报告状态的异步方法。
+        """
         while True:
             try:
+                # 尝试报告状态
                 await self.report_status()
             except asyncio.CancelledError:  # pragma: no cover
+                # 如果任务被取消，退出循环
                 break
             except RuntimeError as ex:  # pragma: no cover
                 if "cannot schedule new futures" not in str(ex):
-                    # when atexit is triggered, the default pool might be shutdown
-                    # and to_thread will fail
+                    # 当atexit被触发时，默认线程池可能已关闭
+                    # 此时to_thread将失败，我们需要退出循环
                     break
             except (
                 Exception
             ) as ex:  # pragma: no cover  # noqa: E722  # nosec  # pylint: disable=bare-except
-                logger.error(f"Failed to upload node info: {ex}")
+                # 记录上传节点信息失败的错误
+                logger.error(f"上传节点信息失败: {ex}")
             try:
+                # 等待一段时间后再次尝试报告状态
                 await asyncio.sleep(XINFERENCE_HEALTH_CHECK_INTERVAL)
             except asyncio.CancelledError:  # pragma: no cover
+                # 如果在等待期间任务被取消，退出循环
                 break
 
     async def list_cached_models(
@@ -1205,6 +1438,32 @@ class WorkerActor(xo.StatelessActor):
             paths.update([os.path.join(path, file) for file in files])
             
             # 如果paths不为空，添加所有文件的真实路径（解析软链接）
+            # 链接（Symbolic Link）：
+            # 软链接是一种特殊的文件，它包含对另一个文件或目录的引用。
+            # 类似于 Windows 中的快捷方式，但更强大和灵活。
+            # 真实路径（Real Path）：
+            # 真实路径是指文件或目录的实际物理位置，而不是通过软链接访问的路径。
+            # 当你通过软链接访问一个文件时，操作系统会自动解析这个链接，找到实际的文件位置。
+            # 解析软链接：
+            # 这个过程就是跟随软链接，找到它所指向的实际文件或目录。
+            # 在 Python 中，os.path.realpath() 函数用于执行这个操作。
+            # 4. 代码中的应用：
+            # if paths:
+            #     paths.update([os.path.realpath(path) for path in paths])
+            # 这行代码遍历 paths 集合中的每个路径。
+            # 对每个路径调用 os.path.realpath()，获取其真实路径。
+            # 然后将这些真实路径添加回 paths 集合。
+            # 5. 为什么这么做：
+            # 确保获取到的是实际文件的路径，而不仅仅是软链接的路径。
+            # 防止重复删除：如果有多个软链接指向同一个文件，这样可以确保只列出一次实际文件。
+            # 确保删除操作作用于实际文件，而不仅仅是删除软链接。
+            
+            
+            # 假设有以下情况：
+            # /actual/path/file.txt 是实际文件
+            # /link/to/file.txt 是指向上面文件的软链接
+            # 代码会将两个路径都转换为 /actual/path/file.txt，确保只列出一次实际文件路径
+            
             if paths:
                 paths.update([os.path.realpath(path) for path in paths])
 
@@ -1262,6 +1521,7 @@ class WorkerActor(xo.StatelessActor):
         
         # 所有操作成功完成，返回True
         return True
+    
     async def get_workers_info(self) -> Dict[str, Any]:
         """
         获取当前工作节点的信息。

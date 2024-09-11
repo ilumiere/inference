@@ -1349,6 +1349,7 @@ def match_llm(
         if model_name != family.model_name:
             continue
         for spec in family.model_specs:
+            # 匹配量化方法
             matched_quantization = _match_quantization(quantization, spec.quantizations)
             # 检查是否满足所有匹配条件
             if (
@@ -1365,6 +1366,7 @@ def match_llm(
             # Copy spec to avoid _apply_format_to_model_id modify the original spec.
             spec = spec.copy()
             if quantization:
+                # 如果指定了量化方法，返回匹配的结果
                 return (
                     family,
                     _apply_format_to_model_id(spec, matched_quantization),

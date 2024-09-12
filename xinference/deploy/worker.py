@@ -23,7 +23,9 @@ from xoscar import MainActorPoolType
 from ..core.worker import WorkerActor
 from ..device_utils import gpu_count
 
+# 获取当前模块的日志记录器
 logger = logging.getLogger(__name__)
+
 
 
 async def start_worker_components(
@@ -33,10 +35,23 @@ async def start_worker_components(
     metrics_exporter_host: Optional[str],
     metrics_exporter_port: Optional[int],
 ):
+    """
+    异步启动工作者组件的函数。
+
+    这个函数的主要用途是初始化GPU设备索引列表，并根据CUDA_VISIBLE_DEVICES环境变量或所有可用的GPU设备创建WorkerActor。
+
+    :param address: 工作者的地址字符串。
+    :param supervisor_address: 监督器的地址字符串。
+    :param main_pool: 主Actor池类型，用于管理工作者Actor。
+    :param metrics_exporter_host: 指标导出器的主机地址，非必填。
+    :param metrics_exporter_port: 指标导出器的端口号，非必填。
+    """
     # 初始化GPU设备索引列表
     gpu_device_indices = []
+    
     # 获取CUDA_VISIBLE_DEVICES环境变量
     cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", None)
+    
     if cuda_visible_devices is not None and cuda_visible_devices != "-1":
         # 如果CUDA_VISIBLE_DEVICES存在且不为-1，解析并添加到GPU设备索引列表
         gpu_device_indices.extend([int(i) for i in cuda_visible_devices.split(",")])
@@ -56,7 +71,6 @@ async def start_worker_components(
         metrics_exporter_port=metrics_exporter_port,
     )
 
-
 async def _start_worker(
     address: str,
     supervisor_address: str,
@@ -64,6 +78,17 @@ async def _start_worker(
     metrics_exporter_port: Optional[int] = None,
     logging_conf: Any = None,
 ):
+    """
+    异步启动工作者组件的函数。
+
+    这个函数的主要用途是启动工作者组件，包括创建工作者actor池、启动工作者组件和等待池完成。它接受工作者地址、监督器地址、指标导出器主机、指标导出器端口和日志配置作为参数。
+
+    :param address: 工作者的地址字符串。
+    :param supervisor_address: 监督器的地址字符串。
+    :param metrics_exporter_host: 指标导出器的主机地址，非必填。
+    :param metrics_exporter_port: 指标导出器的端口号，非必填。
+    :param logging_conf: 日志配置，非必填。
+    """
     # 导入创建工作者actor池的函数
     from .utils import create_worker_actor_pool
 

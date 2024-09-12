@@ -484,6 +484,7 @@ class RESTfulAPI:
         )
         
         # 获取服务地址
+        # 获取supervisor的地址
         self._router.add_api_route("/v1/address", self.get_address, methods=["GET"])
 
         # 用户接口路由配置
@@ -1707,7 +1708,20 @@ class RESTfulAPI:
         body = CreateEmbeddingRequest.parse_obj(payload)
         model_uid = body.model
         
-        # 提取需要的参数
+        # 提取需要的参数,过滤不需要的参数
+        # {
+        #     "model": "model_uid_123",
+        #     "input": "some_input",
+        #     "user": "user_1",
+        #     "encoding_format": "utf-8",
+        #     "param1": "value1",
+        #     "param2": "value2"
+        # }
+        
+        # {
+        #     "param1": "value1",
+        #     "param2": "value2"
+        # }
         exclude = {
             "model",
             "input",

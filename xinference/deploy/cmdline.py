@@ -1410,11 +1410,28 @@ def query_engine_by_model_name(
     endpoint: Optional[str],
     api_key: Optional[str],
 ):
+    """
+    查询指定模型名称的适用推理引擎。
+
+    该函数的主要用途是根据用户提供的模型名称和其他可选参数（如模型引擎、模型格式、模型大小和量化设置），查询并显示支持的推理引擎及其相关参数。
+
+    :param model_name: 要查询的模型名称。
+    :param model_engine: 可选参数，指定要查询的模型引擎。
+    :param model_format: 可选参数，指定要查询的模型格式。
+    :param model_size_in_billions: 可选参数，指定要查询的模型大小（以十亿参数为单位）。
+    :param quantization: 可选参数，指定要查询的量化设置。
+    :param endpoint: 可选参数，指定Xinference的端点。
+    :param api_key: 可选参数，指定用于访问Xinference API的API密钥。
+    """
     from tabulate import tabulate
 
     def match_engine_from_spell(value: str, target: Sequence[str]) -> Tuple[bool, str]:
         """
-        For better usage experience.
+        匹配用户输入的引擎名称与支持的引擎名称，忽略大小写。
+
+        :param value: 用户输入的引擎名称。
+        :param target: 支持的引擎名称列表。
+        :return: 一个元组，包含匹配结果（布尔值）和匹配到的引擎名称。
         """
         for t in target:
             if value.lower() == t.lower():
@@ -1422,6 +1439,11 @@ def query_engine_by_model_name(
         return False, value
 
     def handle_user_passed_parameters() -> List[str]:
+        """
+        处理用户传递的参数，生成用户指定的参数列表。
+
+        :return: 用户指定的参数列表。
+        """
         user_specified_parameters = []
         if model_engine is not None:
             user_specified_parameters.append(f"--model-engine {model_engine}")

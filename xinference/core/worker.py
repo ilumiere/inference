@@ -1129,6 +1129,11 @@ class WorkerActor(xo.StatelessActor):
 
             try:
                 # 创建模型实例
+                # 根据不同的model_type调用不同的create_model_instance
+                # create_llm_model_instance, create_embedding_model_instance
+                # 每个create instance最红返回真正模型的实例
+                # 每个模型的实例都有load(), load之后就把模型加载进去gpu里面
+                # 此时lanch model 就完成
                 model, model_description = await asyncio.to_thread(
                     create_model_instance,
                     subpool_address,

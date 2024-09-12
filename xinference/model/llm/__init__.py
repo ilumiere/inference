@@ -17,6 +17,8 @@ import json
 import os
 import warnings
 
+# init初始化常用的变量
+
 from .core import (
     LLM,
     LLM_MODEL_DESCRIPTIONS,

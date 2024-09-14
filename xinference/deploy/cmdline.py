@@ -1199,27 +1199,27 @@ def model_generate(
             print(f"{response['choices'][0]['text']}\n", file=sys.stdout)
 
 
-@cli.command("chat", help="Chat with a running LLM.")
-@click.option("--endpoint", "-e", type=str, help="Xinference endpoint.")
-@click.option("--model-uid", type=str, help="The unique identifier (UID) of the model.")
+@cli.command("chat", help="与运行的LLM进行聊天。")
+@click.option("--endpoint", "-e", type=str, help="Xinference的端点。")
+@click.option("--model-uid", type=str, help="模型的唯一标识符（UID）。")
 @click.option(
     "--max_tokens",
     default=512,
     type=int,
-    help="Maximum number of tokens in each message (default is 512).",
+    help="每条消息的最大token数（默认是512）。",
 )
 @click.option(
     "--stream",
     default=True,
     type=bool,
-    help="Whether to stream the chat messages. Use 'True' for streaming (default is True).",
+    help="是否流式传输聊天消息。使用'True'进行流式传输（默认是True）。",
 )
 @click.option(
     "--api-key",
     "-ak",
     default=None,
     type=str,
-    help="Api-Key for access xinference api with authorization.",
+    help="用于访问xinference api的Api-Key，带有授权。",
 )
 def model_chat(
     endpoint: Optional[str],
@@ -1228,7 +1228,25 @@ def model_chat(
     stream: bool,
     api_key: Optional[str],
 ):
-    # TODO: chat model roles may not be user and assistant.
+    """
+    与运行的LLM进行聊天。
+
+    参数:
+    - endpoint: Xinference的端点。
+    - model_uid: 模型的唯一标识符（UID）。
+    - max_tokens: 每条消息的最大token数（默认是512）。
+    - stream: 是否流式传输聊天消息。使用'True'进行流式传输（默认是True）。
+    - api-key: 用于访问xinference api的Api-Key，带有授权。
+
+    功能:
+    1. 获取模型的端点和客户端。
+    2. 如果api-key为None，则设置存储的token。
+    3. 根据stream参数的不同，选择不同的聊天方式：
+       - 如果stream为True，使用异步方式进行聊天，逐字生成回复。
+       - 如果stream为False，使用同步方式进行聊天，一次性生成完整回复。
+    4. 在聊天过程中，记录聊天历史，并根据用户的输入生成回复。
+    """
+    # TODO: 聊天模型的角色可能不是用户和助手。
     endpoint = get_endpoint(endpoint)
     client = RESTfulClient(base_url=endpoint, api_key=api_key)
     if api_key is None:
@@ -1236,12 +1254,11 @@ def model_chat(
 
     chat_history: "List[ChatCompletionMessage]" = []
     if stream:
-        # TODO: when stream=True, RestfulClient cannot generate words one by one.
-        # So use Client in temporary. The implementation needs to be changed to
-        # RestfulClient in the future.
+        # TODO: 当stream=True时，RestfulClient无法逐字生成单词。
+        # 因此暂时使用Client。未来的实现需要改为RestfulClient。
         async def chat_internal():
             while True:
-                # the prompt will be written to stdout.
+                # 提示将写入stdout。
                 # https://docs.python.org/3.10/library/functions.html#input
                 prompt = input("User: ")
                 if prompt == "":
@@ -1281,12 +1298,12 @@ def model_chat(
             except KeyboardInterrupt:
                 task.cancel()
                 loop.run_until_complete(task)
-                # avoid displaying exception-unhandled warnings
+                # 避免显示未处理的异常警告
                 task.exception()
     else:
         restful_model = client.get_model(model_uid=model_uid)
         if not isinstance(restful_model, RESTfulChatModelHandle):
-            raise ValueError(f"model {model_uid} has no chat method")
+            raise ValueError(f"模型 {model_uid} 没有聊天方法")
 
         while True:
             prompt = input("User: ")
@@ -1300,7 +1317,7 @@ def model_chat(
                 generate_config={"stream": stream, "max_tokens": max_tokens},
             )
             if not isinstance(response, dict):
-                raise ValueError("chat result is not valid")
+                raise ValueError("聊天结果无效")
             response_content = response["choices"][0]["message"]["content"]
             print(f"{response_content}\n", file=sys.stdout)
             chat_history.append(

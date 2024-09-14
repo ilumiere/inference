@@ -534,6 +534,8 @@ class WorkerActor(xo.StatelessActor):
             user_specified_allocated_devices
         )
         
+        logger.info(f"self.total_gpu_devices: {self._total_gpu_devices}, allocated_devices: {allocated_devices}, _user_specified_gpu_to_model_uids: {self._user_specified_gpu_to_model_uids}")
+        
         # 检查是否有足够的可用设备
         if n_gpu > len(self._total_gpu_devices) - len(allocated_devices):
             raise RuntimeError("No available slot found for the model")

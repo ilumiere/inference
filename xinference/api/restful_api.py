@@ -1238,6 +1238,10 @@ class RESTfulAPI:
             )
 
         # 处理 GPU 索引
+        # 如果 len(gpu_idx) % replica 不等于 0，则抛出一个 HTTPException，状态码为 400，
+        # 提示用户分配的 GPU 数量必须是副本数量的倍数。
+
+
         if isinstance(gpu_idx, int):
             gpu_idx = [gpu_idx]
         if gpu_idx:
